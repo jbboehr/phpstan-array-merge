@@ -25,6 +25,7 @@ use PHPStan\PhpDocParser\Ast\Type\TypeNode;
 use PHPStan\Type\ArrayType;
 use PHPStan\Type\CompoundType;
 use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
+use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\ErrorType;
 use PHPStan\Type\Generic\TemplateTypeVariance;
 use PHPStan\Type\LateResolvableType;
@@ -128,15 +129,39 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
     protected function getResult(): Type
     {
+        $nConstantLists = 0;
         $nConstantArrays = 0;
         $nOtherArrays = 0;
 
         foreach ($this->types as $type) {
             if ($type->isConstantArray()->yes()) {
+                if ($type->isList()->yes()) {
+                    $nConstantLists++;
+                }
                 $nConstantArrays++;
             } elseif ($type->isArray()->yes()) {
                 $nOtherArrays++;
             }
+        }
+
+        if ($nConstantLists === count($this->types)) {
+            $builder = ConstantArrayTypeBuilder::createEmpty();
+            $index = 0;
+
+            foreach ($this->types as $type) {
+                /** @TODO don't handle more than one atm */
+                if (count($type->getConstantArrays()) !== 1) {
+                    return new MixedType();
+                }
+                $constantArrayType = $type->getConstantArrays()[0];
+                $valueTypes = $constantArrayType->getValueTypes();
+
+                foreach ($valueTypes as $valueType) {
+                    $builder->setOffsetValueType(new ConstantIntegerType($index++), $valueType);
+                }
+            }
+
+            return $builder->getArray();
         }
 
         if ($nConstantArrays === count($this->types)) {
@@ -163,7 +188,9 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             }
 
             return $builder->getArray();
-        } elseif ($nOtherArrays === count($this->types)) {
+        }
+
+        if ($nOtherArrays === count($this->types)) {
             $combinedKeyType = null;
             $combinedItemType = null;
 
@@ -203,7 +230,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         foreach ($this->types as $type) {
             $newType = $cb($type);
             $newTypes[] = $newType;
-            if ($newType !== $type) {
+            if ($newType !== $type && !$newType->equals($type)) {
                 $replace = true;
             }
         }

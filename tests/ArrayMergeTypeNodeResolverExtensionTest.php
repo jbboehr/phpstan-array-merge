@@ -30,8 +30,8 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
     public static function dataFileAsserts(): \Generator
     {
         yield from self::gatherAssertTypes(__DIR__ . '/data/basic.php');
-        // @TODO these are not working yet
-        // yield from self::gatherAssertTypes(__DIR__ . '/data/generic.php');
+        yield from self::gatherAssertTypes(__DIR__ . '/data/generic.php');
+        yield from self::gatherAssertTypes(__DIR__ . '/data/generic-constant-list.php');
     }
 
     /**

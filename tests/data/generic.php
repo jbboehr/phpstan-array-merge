@@ -2,19 +2,13 @@
 
 namespace jbboehr\PHPStan\ArrayMerge\Tests\Data;
 
+use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\genericMergeOne;
+use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\sanity1;
 use function PHPStan\Testing\assertType;
 
-/**
- * @template A of array
- * @template B of array
- * @param A $a
- * @param B $b
- * @phpstan-return array-merge<A, B>
- */
-function merge(array $a, array $b): array
-{
-    return array_merge($a, $b);
-}
+/** sanity check, type inferrence when the function is in this file does not seem to work WTF */
+assertType("array<string, stdClass>", sanity1());
 
-$b = merge(['a' => 1], ['b' => 2]);
-assertType("array{a: 1, b: 2}", $b);
+assertType("array{a: 1, b: 2}", genericMergeOne(['a' => 1], ['b' => 2]));
+
+assertType("array{a: 2}", genericMergeOne(['a' => 1], ['a' => 2]));

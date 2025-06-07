@@ -30,6 +30,9 @@
         "symfony/var-dumper": "*"
     },
     "autoload-dev": {
+        "files": [
+            "tests/fixtures/functions.php"
+        ],
         "psr-4": {
             "jbboehr\\PHPStan\\ArrayMerge\\Tests\\": "tests"
         }
