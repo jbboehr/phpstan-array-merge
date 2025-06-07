@@ -57,3 +57,17 @@ class MultiConstVar
      */
     public $var;
 }
+
+/**
+ * @template A of array<mixed>
+ * @template B of array<mixed>
+ * @template C of array<mixed>
+ * @param A $a
+ * @param B $b
+ * @param C $c
+ * @phpstan-return array-merge<array-merge<A, B>, C>
+ */
+function nested(array $a, array $b, array $c): array
+{
+    return [];
+}

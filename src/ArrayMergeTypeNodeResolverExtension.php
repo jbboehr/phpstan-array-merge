@@ -49,12 +49,19 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
                 return null;
             }
 
-            $types = array_values(array_map(
-                function (TypeNode $typeNode) use ($nameScope) {
-                    return $this->typeNodeResolver->resolve($typeNode, $nameScope);
-                },
-                $typeNode->genericTypes,
-            ));
+            $types = [];
+
+            foreach ($typeNode->genericTypes as $genericTypeNode) {
+                $type = $this->typeNodeResolver->resolve($genericTypeNode, $nameScope);
+
+                if ($type instanceof ArrayMergeType) {
+                    foreach ($type->getTypes() as $childType) {
+                        $types[] = $childType;
+                    }
+                } else {
+                    $types[] = $type;
+                }
+            }
 
             return new ArrayMergeType($types);
         } catch (\Throwable $e) {
