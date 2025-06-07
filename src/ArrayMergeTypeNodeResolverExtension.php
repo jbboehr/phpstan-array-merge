@@ -38,28 +38,27 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
 
     public function resolve(TypeNode $typeNode, NameScope $nameScope): ?Type
     {
-        if (!$typeNode instanceof GenericTypeNode) {
-            // returning null means this extension is not interested in this node
-            return null;
+        try {
+            if (!$typeNode instanceof GenericTypeNode) {
+                return null;
+            }
+
+            $typeName = $typeNode->type;
+
+            if ($typeName->name !== 'array-merge' || count($typeNode->genericTypes) <= 0) {
+                return null;
+            }
+
+            $types = array_values(array_map(
+                function (TypeNode $typeNode) use ($nameScope) {
+                    return $this->typeNodeResolver->resolve($typeNode, $nameScope);
+                },
+                $typeNode->genericTypes,
+            ));
+
+            return new ArrayMergeType($types);
+        } catch (\Throwable $e) {
+            ShouldNotHappenException::rethrow($e);
         }
-
-        $typeName = $typeNode->type;
-
-        if ($typeName->name !== 'array-merge') {
-            return null;
-        }
-
-        if (count($typeNode->genericTypes) <= 0) {
-            return null;
-        }
-
-        $types = array_values(array_map(
-            function (TypeNode $typeNode) use ($nameScope) {
-                return $this->typeNodeResolver->resolve($typeNode, $nameScope);
-            },
-            $typeNode->genericTypes,
-        ));
-
-        return new ArrayMergeType($types);
     }
 }

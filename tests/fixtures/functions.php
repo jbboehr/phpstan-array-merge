@@ -31,3 +31,18 @@ function sanity1(): array
 {
     return [];
 }
+
+class ConstFixture
+{
+    public const ARRAY = ['foo' => 'bar'];
+
+    /**
+     * @template T of array<mixed>
+     * @param T $a
+     * @phpstan-return array-merge<self::ARRAY, T>
+     */
+    public static function constMerge(array $a): array
+    {
+        return array_merge(self::ARRAY, $a);
+    }
+}

@@ -19,37 +19,81 @@ declare(strict_types=1);
 
 namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
+use jbboehr\PHPStan\ArrayMerge\ArrayMergeTypeNodeResolverExtension;
+use jbboehr\PHPStan\ArrayMerge\ShouldNotHappenException;
+use PHPStan\Analyser\NameScope;
+use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
+use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
 use PHPStan\Testing\TypeInferenceTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 
+/**
+ * @note The PHPStan example used a dataProvider which caused issues with code coverage
+ */
 final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCase
 {
     /**
-     * @return \Generator<string, mixed[]>
+     * @return \Generator<array{string}>
      */
-    public static function dataFileAsserts(): \Generator
+    public static function dataFileProvider(): \Generator
     {
-        yield from self::gatherAssertTypes(__DIR__ . '/data/basic.php');
-        yield from self::gatherAssertTypes(__DIR__ . '/data/generic.php');
-        yield from self::gatherAssertTypes(__DIR__ . '/data/generic-constant-list.php');
+        yield [__DIR__ . '/data/invalid.php'];
+        yield [__DIR__ . '/data/basic.php'];
+        yield [__DIR__ . '/data/generic.php'];
+        yield [__DIR__ . '/data/generic-constant-list.php'];
+        yield [__DIR__ . '/data/generic-const.php'];
     }
 
     /**
-     * @note The PHPStan example used a dataProvider which caused issues with code coverage
+     * @dataProvider dataFileProvider
      */
-    public function testFileAsserts(): void
+    #[DataProvider('dataFileProvider')]
+    public function testBasic(string $file): void
     {
-        foreach (self::dataFileAsserts() as $data) {
-            $this->assertGreaterThan(2, count($data));
-
-            [$assertType, $file] = $data;
-            $args = array_slice($data, 2);
-
-            $this->assertIsString($assertType);
-            $this->assertIsString($file);
-
-            $this->assertFileAsserts($assertType, $file, ...$args);
+        foreach (self::safeGatherAssertTypes($file) as $assert) {
+            $this->assertFileAsserts(...$assert);
         }
+    }
+
+    /**
+     * @param string $file
+     * @return array<string, array{string, string, string, string, int}>
+     */
+    public static function safeGatherAssertTypes(string $file): array
+    {
+        return array_map(
+            static function (array $args) {
+                self::assertCount(5, $args);
+                self::assertIsString($args[0]);
+                self::assertIsString($args[1]);
+                self::assertIsString($args[2]);
+                self::assertIsString($args[3]);
+                self::assertIsInt($args[4]);
+                return [$args[0], $args[1], $args[2], $args[3], $args[4]];
+            },
+            self::gatherAssertTypes($file),
+        );
+    }
+
+    public function testExceptionConversion(): void
+    {
+        $resolver = new ArrayMergeTypeNodeResolverExtension();
+
+        /** @phpstan-ignore-next-line argument.type */
+        $typeNode = new GenericTypeNode(new IdentifierTypeNode('array-merge'), [1, 2, 3]);
+
+        $this->expectException(ShouldNotHappenException::class);
+
+        $resolver->resolve($typeNode, new NameScope(null, []));
+    }
+
+    public function testEmptyGenericTypesReturnsNull(): void
+    {
+        $resolver = new ArrayMergeTypeNodeResolverExtension();
+
+        $typeNode = new GenericTypeNode(new IdentifierTypeNode('array-merge'), []);
+
+        $this->assertNull($resolver->resolve($typeNode, new NameScope(null, [])));
     }
 
     public static function getAdditionalConfigFiles(): array

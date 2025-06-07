@@ -166,6 +166,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
         if ($nConstantArrays === count($this->types)) {
             $builder = ConstantArrayTypeBuilder::createEmpty();
+
             foreach ($this->types as $type) {
                 /** @TODO don't handle more than one atm */
                 if (count($type->getConstantArrays()) !== 1) {
@@ -216,7 +217,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             return new ArrayType($combinedKeyType, $combinedItemType);
         }
 
-        return new MixedType();
+        return new ArrayType(new MixedType(true), new MixedType(true));
     }
 
     /**
@@ -238,9 +239,9 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         return $replace ? new self($newTypes) : $this;
     }
 
-    public function traverseSimultaneously(Type $right, callable $cb): Type
+    public function traverseSimultaneously(Type $right, callable $cb): never
     {
-        return $this;
+        throw new ShouldNotHappenException('traverseSimultaneously is not implemented');
     }
 
     public function toPhpDocNode(): TypeNode
@@ -258,21 +259,21 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         $types = $properties['types'] ?? null;
 
         if (!is_array($types)) {
-            return new self([new ErrorType()]);
+            return new ErrorType();
         }
 
         $types = array_values($types);
 
         foreach ($types as $type) {
             if (!($type instanceof Type)) {
-                return new self([new ErrorType()]);
+                return new ErrorType();
             }
         }
 
         /** @phpstan-var list<Type> $types */
 
         if (count($types) <= 0) {
-            return new self([new ErrorType()]);
+            return new ErrorType();
         }
 
         return new self($types);
