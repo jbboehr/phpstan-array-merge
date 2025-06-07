@@ -25,7 +25,6 @@ use PHPStan\PhpDoc\TypeNodeResolverAwareExtension;
 use PHPStan\PhpDoc\TypeNodeResolverExtension;
 use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\TypeNode;
-use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Type;
 
 final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExtension, TypeNodeResolverAwareExtension
@@ -45,113 +44,22 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
         }
 
         $typeName = $typeNode->type;
+
         if ($typeName->name !== 'array-merge') {
             return null;
         }
 
-        if (count($typeNode->genericTypes) <= 1) {
+        if (count($typeNode->genericTypes) <= 0) {
             return null;
         }
 
-        $hasTemplateType = false;
-
         $types = array_values(array_map(
-            function (TypeNode $typeNode) use ($nameScope, &$hasTemplateType) {
-                $type = $this->typeNodeResolver->resolve($typeNode, $nameScope);
-
-                if ($type instanceof TemplateType) {
-                    $hasTemplateType = true;
-                }
-
-                return $type;
+            function (TypeNode $typeNode) use ($nameScope) {
+                return $this->typeNodeResolver->resolve($typeNode, $nameScope);
             },
             $typeNode->genericTypes,
         ));
 
-        $arrayMergeType = new ArrayMergeType($types);
-
-//        if (!$hasTemplateType) {
-            return $arrayMergeType;
-//        }
-//
-//        foreach ($types as $index => $type) {
-//            if ($type instanceof TemplateType) {
-//                $templateType = new ArrayMergeTemplateType(
-//                    $nameScope->getTemplateTypeScope(),
-//                    new TemplateTypeParameterStrategy(),
-//                    TemplateTypeVariance::createInvariant(), // @TODO
-//                    $type->getName(),
-//                    $arrayMergeType
-//                );
-//
-//                dd($templateType->describe(VerbosityLevel::typeOnly()));
-//
-//                // $types[$index] =
-//            }
-//        }
-//
-//        return new ArrayMergeType($types);
-
-//        dd($typeNode->variances);
-
-//        return
-//
-//        $strategy ??= ;
-//        dd($types);
-
-//        return new ArrayMergeType();
-
-//        $arguments = $typeNode->genericTypes;
-//
-//
-//        foreach ($arguments as $argument) {
-//            $type = $this->typeNodeResolver->resolve($argument, $nameScope);
-//
-//            dd($type);
-////            $constantArrays = $type->getConstantArrays();
-////            if (count($constantArrays) === 0) {
-////                return null;
-////            }
-////
-////            dd($constantArrays);
-//        }
-//
-//        dd($arguments);
-
-//        if (count($arguments) !== 2) {
-//            return null;
-//        }
-//
-//        $arrayType = $this->typeNodeResolver->resolve($arguments[0], $nameScope);
-//        $keysType = $this->typeNodeResolver->resolve($arguments[1], $nameScope);
-//
-//        $constantArrays = $arrayType->getConstantArrays();
-//        if (count($constantArrays) === 0) {
-//            return null;
-//        }
-//
-//        $newTypes = [];
-//        foreach ($constantArrays as $constantArray) {
-//            $newTypeBuilder = ConstantArrayTypeBuilder::createEmpty();
-//            foreach ($constantArray->getKeyTypes() as $i => $keyType) {
-//                if (!$keysType->isSuperTypeOf($keyType)->yes()) {
-//                    // eliminate keys that aren't in the Pick type
-//                    continue;
-//                }
-//
-//                $valueType = $constantArray->getValueTypes()[$i];
-//                $newTypeBuilder->setOffsetValueType(
-//                    $keyType,
-//                    $valueType,
-//                    $constantArray->isOptionalKey($i),
-//                );
-//            }
-//
-//            $newTypes[] = $newTypeBuilder->getArray();
-//        }
-//
-//        return TypeCombinator::union(...$newTypes);
-
-//        return null;
+        return new ArrayMergeType($types);
     }
 }
