@@ -47,4 +47,8 @@
     <rule ref="PSR1.Classes.ClassDeclaration.MissingNamespace">
         <exclude-pattern>*/tests/data/*</exclude-pattern>
     </rule>
+
+    <rule ref="PSR1.Classes.ClassDeclaration.MultipleClasses">
+        <exclude-pattern>*/tests/fixtures/functions.php</exclude-pattern>
+    </rule>
 </ruleset>

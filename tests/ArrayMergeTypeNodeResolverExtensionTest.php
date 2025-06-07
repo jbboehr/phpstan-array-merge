@@ -42,6 +42,7 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
         yield [__DIR__ . '/data/generic.php'];
         yield [__DIR__ . '/data/generic-constant-list.php'];
         yield [__DIR__ . '/data/generic-const.php'];
+        yield [__DIR__ . '/data/multi-const-var.php'];
     }
 
     /**
@@ -63,6 +64,9 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
     {
         return array_map(
             static function (array $args) {
+                if (count($args) !== 5) {
+                    dd($args);
+                }
                 self::assertCount(5, $args);
                 self::assertIsString($args[0]);
                 self::assertIsString($args[1]);

@@ -46,3 +46,14 @@ class ConstFixture
         return array_merge(self::ARRAY, $a);
     }
 }
+
+class MultiConstVar
+{
+    public const ONE = ['foo' => 'bar'];
+    public const TWO = ['baz' => 'bat'];
+
+    /**
+     * @phpstan-var array-merge<self::ONE, self::TWO>
+     */
+    public $var;
+}
