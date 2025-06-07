@@ -14,6 +14,15 @@ function genericMergeOne(array $a, array $b): array
     return [];
 }
 
+/**
+ * @template A of array<mixed>
+ * @param A $a
+ * @phpstan-return array-merge<A>
+ */
+function identity(array $a): array
+{
+    return [];
+}
 
 /**
  * @return array<string, \stdClass>

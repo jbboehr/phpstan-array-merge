@@ -35,16 +35,21 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
     }
 
     /**
-     * @dataProvider dataFileAsserts
-     * @param mixed ...$args
+     * @note The PHPStan example used a dataProvider which caused issues with code coverage
      */
-    #[DataProvider('dataFileAsserts')]
-    public function testFileAsserts(
-        string $assertType,
-        string $file,
-        ...$args,
-    ): void {
-        $this->assertFileAsserts($assertType, $file, ...$args);
+    public function testFileAsserts(): void
+    {
+        foreach (self::dataFileAsserts() as $data) {
+            $this->assertGreaterThan(2, count($data));
+
+            [$assertType, $file] = $data;
+            $args = array_slice($data, 2);
+
+            $this->assertIsString($assertType);
+            $this->assertIsString($file);
+
+            $this->assertFileAsserts($assertType, $file, ...$args);
+        }
     }
 
     public static function getAdditionalConfigFiles(): array
