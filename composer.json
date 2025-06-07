@@ -1,0 +1,58 @@
+{
+    "name": "jbboehr/phpstan-array-merge",
+    "type": "phpstan-extension",
+    "description": "",
+    "license": "AGPL-3.0+",
+    "homepage": "https://github.com/jbboehr/phpstan-array-merge",
+    "authors": [
+        {
+            "name": "John Boehr",
+            "email": "jbboehr@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "phpstan/phpstan": "^1.12 || ^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "jbboehr\\PHPStan\\ArrayMerge\\": "src/"
+        }
+    },
+    "require-dev": {
+        "composer-runtime-api": "*",
+        "brick/varexporter": "*",
+        "phpstan/phpstan-phpunit": "^1.4.2 || ^2.0.6",
+        "phpstan/phpstan-strict-rules": "^1.6.2 || ^2.0.4",
+        "phpunit/phpunit": "^9.6 || ^10.5 || ^11.5",
+        "slevomat/coding-standard": "^8.18",
+        "squizlabs/php_codesniffer": "^3.13",
+        "symfony/var-dumper": "*"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "jbboehr\\PHPStan\\ArrayMerge\\Tests\\": "tests"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": false
+        }
+    },
+    "extra": {
+        "phpstan": {
+            "includes": [
+                "extension.neon"
+            ]
+        }
+    },
+    "scripts": {
+        "phpcs": "./vendor/bin/phpcs",
+        "phpstan": "./vendor/bin/phpstan",
+        "phpunit": "./vendor/bin/phpunit"
+    },
+    "_comment": [
+        "Think not that I am come to send peace on earth: I came not to send peace, but a sword. Matthew 10:34"
+    ]
+}

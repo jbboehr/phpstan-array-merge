@@ -1,0 +1,3 @@
+services:
+  - class: jbboehr\PHPStan\ArrayMerge\ArrayMergeTypeNodeResolverExtension
+    tags: ["phpstan.phpDoc.typeNodeResolverExtension"]
