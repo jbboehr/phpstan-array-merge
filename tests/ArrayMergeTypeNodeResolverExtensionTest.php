@@ -64,20 +64,25 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
     public static function safeGatherAssertTypes(string $file): array
     {
         return array_map(
-            static function (array $args) {
-                if (count($args) !== 5) {
-                    dd($args);
-                }
-                self::assertCount(5, $args);
-                self::assertIsString($args[0]);
-                self::assertIsString($args[1]);
-                self::assertIsString($args[2]);
-                self::assertIsString($args[3]);
-                self::assertIsInt($args[4]);
-                return [$args[0], $args[1], $args[2], $args[3], $args[4]];
-            },
+            self::validateAssertType(...),
             self::gatherAssertTypes($file),
         );
+    }
+
+    /**
+     * @return array{string, string, string, string, int}
+     */
+    private static function validateAssertType(mixed $args): array
+    {
+        self::assertIsArray($args);
+        self::assertCount(5, $args);
+        self::assertIsString($args[0]);
+        self::assertIsString($args[1]);
+        self::assertIsString($args[2]);
+        self::assertIsString($args[3]);
+        self::assertIsInt($args[4]);
+
+        return [$args[0], $args[1], $args[2], $args[3], $args[4]];
     }
 
     public function testExceptionConversion(): void

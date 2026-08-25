@@ -1,148 +1,176 @@
-name: ci
+name: CI
 
 on:
-    push:
-        branches:
-            - master
-            - develop
-            - ci
-    pull_request:
-        branches:
-            - master
+  push:
+    branches:
+      - master
+      - develop
+      - ci
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
 
 permissions:
-    contents: read
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-    lint:
-        runs-on: ubuntu-latest
-        name: "Lint | PHP ${{ matrix.php-version }}"
-        strategy:
-            fail-fast: false
-            matrix:
-                php-version:
-                    - "8.1"
-                    - "8.2"
-                    - "8.3"
-                    - "8.4"
-        steps:
-            - uses: actions/checkout@v4
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint | PHP ${{ matrix.php-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version:
+          - "8.1"
+          - "8.2"
+          - "8.3"
+          - "8.4"
+          - "8.5"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-            - name: Install PHP
-              uses: shivammathur/setup-php@v2
-              with:
-                  coverage: "none"
-                  php-version: "${{ matrix.php-version }}"
-                  tools: composer:v2
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          coverage: none
+          php-version: ${{ matrix.php-version }}
+          tools: composer:v2
 
-            - name: Validate composer.json and composer.lock
-              run: composer validate --strict
+      - name: Validate Composer files
+        run: composer validate --strict
 
-            - name: Cache Composer packages
-              id: composer-cache
-              uses: actions/cache@v4
-              with:
-                  path: vendor
-                  key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
-                  restore-keys: |
-                      ${{ runner.os }}-php-
+      - name: Find Composer cache directory
+        id: composer-cache
+        run: echo "path=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
-            - name: Install dependencies
-              run: composer install --prefer-dist --no-progress --ignore-platform-req=php+
+      - name: Cache Composer packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.path }}
+          key: composer-${{ runner.os }}-${{ runner.arch }}-php-${{ matrix.php-version }}-${{ hashFiles('composer.json', 'composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-${{ runner.arch }}-php-${{ matrix.php-version }}-
 
-            - name: phpcs
-              run: php vendor/bin/phpcs
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
 
-            - name: phpstan
-              run: php vendor/bin/phpstan analyze
+      - name: Run PHP_CodeSniffer
+        run: composer phpcs
 
-    test:
-        runs-on: ubuntu-latest
-        name: "Test | PHP ${{ matrix.php-version }}"
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - php-version: "8.1"
-                    - php-version: "8.2"
-                    - php-version: "8.3"
-                    - php-version: "8.4"
-        steps:
-            - uses: actions/checkout@v4
+      - name: Run PHPStan
+        run: composer phpstan -- analyze
 
-            - name: Install PHP
-              uses: shivammathur/setup-php@v2
-              with:
-                  coverage: "none"
-                  php-version: "${{ matrix.php-version }}"
-                  tools: composer:v2
+  test:
+    runs-on: ubuntu-latest
+    name: Test | PHP ${{ matrix.php-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version:
+          - "8.1"
+          - "8.2"
+          - "8.3"
+          - "8.4"
+          - "8.5"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-            - name: Cache Composer packages
-              id: composer-cache
-              uses: actions/cache@v4
-              with:
-                  path: vendor
-                  key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}- }}
-                  restore-keys: |
-                      ${{ runner.os }}-php-
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          coverage: none
+          php-version: ${{ matrix.php-version }}
+          tools: composer:v2
 
-            - name: Install dependencies
-              run: composer update --no-progress --no-interaction --prefer-dist
+      - name: Find Composer cache directory
+        id: composer-cache
+        run: echo "path=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
-            - name: Run test suite
-              run: php vendor/bin/phpunit --no-coverage
+      - name: Cache Composer packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.path }}
+          key: composer-${{ runner.os }}-${{ runner.arch }}-php-${{ matrix.php-version }}-${{ hashFiles('composer.json', 'composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-${{ runner.arch }}-php-${{ matrix.php-version }}-
 
-    coverage:
-        runs-on: ubuntu-latest
-        name: "Coverage | PHP ${{ matrix.php-version }}"
-        strategy:
-            matrix:
-                php-version:
-                    - "8.3"
-        steps:
-            - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
 
-            - name: Install PHP
-              uses: shivammathur/setup-php@v2
-              with:
-                  coverage: pcov
-                  php-version: "${{ matrix.php-version }}"
-                  tools: composer:v2
+      - name: Run test suite
+        run: composer phpunit -- --no-coverage
 
-            - name: Cache Composer packages
-              id: composer-cache
-              uses: actions/cache@v4
-              with:
-                  path: vendor
-                  key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
-                  restore-keys: |
-                      ${{ runner.os }}-php-
+  coverage:
+    runs-on: ubuntu-latest
+    name: Coverage | PHP 8.5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-            - name: Install dependencies
-              run: composer install --prefer-dist --no-progress
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          coverage: pcov
+          php-version: "8.5"
+          tools: composer:v2
 
-            - name: Run test suite with coverage
-              run: php vendor/bin/phpunit --coverage-text
+      - name: Find Composer cache directory
+        id: composer-cache
+        run: echo "path=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
-            - name: Upload code coverage
-              # https://github.com/paambaati/codeclimate-action/issues/638#issuecomment-1363476627
-              uses: paambaati/codeclimate-action@v3.2.0
-              env:
-                  CC_TEST_REPORTER_ID: 3f8f6d064fc0b063230c71511f07aec326a2eb84f3c5653161b5f087aae315f9
-              with:
-                  coverageCommand: "true"
-                  coverageLocations: |
-                      clover.xml:clover
+      - name: Cache Composer packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.path }}
+          key: composer-${{ runner.os }}-${{ runner.arch }}-php-8.5-${{ hashFiles('composer.json', 'composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-${{ runner.arch }}-php-8.5-
 
-    nix:
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
 
-            - uses: cachix/install-nix-action@v27
-              with:
-                  nix_path: nixpkgs=channel:nixos-25.05
+      - name: Run test suite with coverage
+        run: composer phpunit -- --coverage-text
 
-#            - run: nix build -L
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: clover.xml
+          if-no-files-found: error
 
-            - run: nix flake check -L
+  nix:
+    runs-on: ubuntu-latest
+    name: Nix flake
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: |
+            nix-${{ runner.os }}-${{ runner.arch }}-
+          gc-max-store-size-linux: 1G
+
+      - name: Check flake
+        run: nix flake check -L
