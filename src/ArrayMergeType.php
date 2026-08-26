@@ -23,6 +23,7 @@ use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\TypeNode;
 use PHPStan\Type\Accessory\AccessoryArrayListType;
+use PHPStan\Type\Accessory\NonEmptyArrayType;
 use PHPStan\Type\ArrayType;
 use PHPStan\Type\CompoundType;
 use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
@@ -201,6 +202,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
         if ($nOtherArrays === count($this->types)) {
             $allIntegerKeys = true;
+            $atLeastOneNonEmpty = false;
             $combinedKeyType = null;
             $combinedItemType = null;
 
@@ -208,6 +210,10 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 /** @TODO don't handle more than one atm */
                 if (count($type->getArrays()) !== 1) {
                     return new MixedType();
+                }
+
+                if ($type->isIterableAtLeastOnce()->yes()) {
+                    $atLeastOneNonEmpty = true;
                 }
 
                 $arrayType = $type->getArrays()[0];
@@ -231,11 +237,15 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 }
             }
 
-            $arrayType = new ArrayType($combinedKeyType, $combinedItemType);
+            $result = new ArrayType($combinedKeyType, $combinedItemType);
 
-            return $allIntegerKeys
-                ? TypeCombinator::intersect($arrayType, new AccessoryArrayListType())
-                : $arrayType;
+            if ($allIntegerKeys) {
+                $result = TypeCombinator::intersect($result, new AccessoryArrayListType());
+            }
+
+            return $atLeastOneNonEmpty
+                ? TypeCombinator::intersect($result, new NonEmptyArrayType())
+                : $result;
         }
 
         return new ArrayType(new MixedType(true), new MixedType(true));
