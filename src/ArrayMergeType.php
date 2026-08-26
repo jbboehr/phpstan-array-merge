@@ -22,6 +22,7 @@ namespace jbboehr\PHPStan\ArrayMerge;
 use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\TypeNode;
+use PHPStan\Type\Accessory\AccessoryArrayListType;
 use PHPStan\Type\ArrayType;
 use PHPStan\Type\CompoundType;
 use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
@@ -199,6 +200,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         if ($nOtherArrays === count($this->types)) {
+            $allIntegerKeys = true;
             $combinedKeyType = null;
             $combinedItemType = null;
 
@@ -211,6 +213,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 $arrayType = $type->getArrays()[0];
                 $keyType = $arrayType->getKeyType();
                 $itemType = $arrayType->getItemType();
+                $allIntegerKeys = $allIntegerKeys && $keyType->isInteger()->yes();
 
                 if (!($keyType instanceof MixedType) && !$keyType->isInteger()->no()) {
                     $keyType = TypeCombinator::union(
@@ -228,7 +231,11 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 }
             }
 
-            return new ArrayType($combinedKeyType, $combinedItemType);
+            $arrayType = new ArrayType($combinedKeyType, $combinedItemType);
+
+            return $allIntegerKeys
+                ? TypeCombinator::intersect($arrayType, new AccessoryArrayListType())
+                : $arrayType;
         }
 
         return new ArrayType(new MixedType(true), new MixedType(true));
