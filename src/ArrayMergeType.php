@@ -28,6 +28,8 @@ use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
 use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\ErrorType;
 use PHPStan\Type\Generic\TemplateTypeVariance;
+use PHPStan\Type\IntegerRangeType;
+use PHPStan\Type\IntegerType;
 use PHPStan\Type\LateResolvableType;
 use PHPStan\Type\MixedType;
 use PHPStan\Type\Traits\LateResolvableTypeTrait;
@@ -184,7 +186,13 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 }
 
                 for ($i = 0; $i < $l; $i++) {
-                    $builder->setOffsetValueType($keyTypes[$i], $valueTypes[$i], $constantArrayType->isOptionalKey($i));
+                    $keyType = $keyTypes[$i];
+
+                    $builder->setOffsetValueType(
+                        $keyType instanceof ConstantIntegerType ? null : $keyType,
+                        $valueTypes[$i],
+                        $constantArrayType->isOptionalKey($i),
+                    );
                 }
             }
 
@@ -204,6 +212,13 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 $arrayType = $type->getArrays()[0];
                 $keyType = $arrayType->getKeyType();
                 $itemType = $arrayType->getItemType();
+
+                if (!($keyType instanceof MixedType) && !$keyType->isInteger()->no()) {
+                    $keyType = TypeCombinator::union(
+                        TypeCombinator::remove($keyType, new IntegerType()),
+                        IntegerRangeType::fromInterval(0, null),
+                    );
+                }
 
                 if (null === $combinedKeyType) {
                     $combinedKeyType = $keyType;
