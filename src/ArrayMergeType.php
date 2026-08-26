@@ -200,7 +200,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             return $builder->getArray();
         }
 
-        if ($nConstantLists + $nOtherArrays === count($this->types)) {
+        if ($nConstantArrays + $nOtherArrays === count($this->types)) {
             $allIntegerKeys = true;
             $atLeastOneNonEmpty = false;
             $combinedKeyType = null;
@@ -209,7 +209,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             foreach ($this->types as $type) {
                 /** @TODO don't handle more than one atm */
                 if (count($type->getArrays()) !== 1) {
-                    return new MixedType();
+                    return new ArrayType(new MixedType(true), new MixedType(true));
                 }
 
                 if ($type->isIterableAtLeastOnce()->yes()) {
