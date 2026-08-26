@@ -45,6 +45,7 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
         yield [__DIR__ . '/data/multi-const-var.php'];
         yield [__DIR__ . '/data/nested.php'];
         yield [__DIR__ . '/data/numeric-keys.php'];
+        yield [__DIR__ . '/data/optional-lists.php'];
     }
 
     /**

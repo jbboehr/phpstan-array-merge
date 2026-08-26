@@ -148,7 +148,6 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
         if ($nConstantLists === count($this->types)) {
             $builder = ConstantArrayTypeBuilder::createEmpty();
-            $index = 0;
 
             foreach ($this->types as $type) {
                 /** @TODO don't handle more than one atm */
@@ -158,8 +157,8 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 $constantArrayType = $type->getConstantArrays()[0];
                 $valueTypes = $constantArrayType->getValueTypes();
 
-                foreach ($valueTypes as $valueType) {
-                    $builder->setOffsetValueType(new ConstantIntegerType($index++), $valueType);
+                foreach ($valueTypes as $i => $valueType) {
+                    $builder->setOffsetValueType(null, $valueType, $constantArrayType->isOptionalKey($i));
                 }
             }
 
