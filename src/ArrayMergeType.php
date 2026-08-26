@@ -200,7 +200,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             return $builder->getArray();
         }
 
-        if ($nOtherArrays === count($this->types)) {
+        if ($nConstantLists + $nOtherArrays === count($this->types)) {
             $allIntegerKeys = true;
             $atLeastOneNonEmpty = false;
             $combinedKeyType = null;
@@ -219,7 +219,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 $arrayType = $type->getArrays()[0];
                 $keyType = $arrayType->getKeyType();
                 $itemType = $arrayType->getItemType();
-                $allIntegerKeys = $allIntegerKeys && $keyType->isInteger()->yes();
+                $allIntegerKeys = $allIntegerKeys && (new IntegerType())->isSuperTypeOf($keyType)->yes();
 
                 if (!($keyType instanceof MixedType) && !$keyType->isInteger()->no()) {
                     $keyType = TypeCombinator::union(
