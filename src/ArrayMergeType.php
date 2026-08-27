@@ -310,9 +310,24 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         return $replace ? new self($newTypes) : $this;
     }
 
-    public function traverseSimultaneously(Type $right, callable $cb): never
+    public function traverseSimultaneously(Type $right, callable $cb): Type
     {
-        throw new ShouldNotHappenException('traverseSimultaneously is not implemented');
+        if (!$right instanceof self || count($this->types) !== count($right->types)) {
+            return $this;
+        }
+
+        $newTypes = [];
+        $replace = false;
+
+        foreach ($this->types as $i => $type) {
+            $newType = $cb($type, $right->types[$i]);
+            $newTypes[] = $newType;
+            if ($newType !== $type) {
+                $replace = true;
+            }
+        }
+
+        return $replace ? new self($newTypes) : $this;
     }
 
     public function toPhpDocNode(): TypeNode

@@ -20,7 +20,6 @@ declare(strict_types=1);
 namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
-use jbboehr\PHPStan\ArrayMerge\ShouldNotHappenException;
 use PHPStan\PhpDocParser\Printer\Printer;
 use PHPStan\Type\ArrayType;
 use PHPStan\Type\ErrorType;
@@ -112,13 +111,77 @@ final class ArrayMergeTypeTest extends TestCase
 
     public function testTraverseSimultaneously(): void
     {
-        $this->expectException(ShouldNotHappenException::class);
+        $left = new ArrayMergeType([new IntegerType(), new StringType()]);
+        $rightTypes = [new StringType(), new IntegerType()];
+        $right = new ArrayMergeType($rightTypes);
 
-        $type = new ArrayMergeType([
-            new ArrayType(new MixedType(), new ObjectType('stdClass')),
-            new ArrayType(new MixedType(), new ObjectType('Throwable')),
-        ]);
+        $result = $left->traverseSimultaneously(
+            $right,
+            static fn(Type $leftType, Type $rightType): Type => $rightType,
+        );
 
-        $type->traverseSimultaneously(new MixedType(), static fn(Type $type): MixedType => new MixedType());
+        $this->assertInstanceOf(ArrayMergeType::class, $result);
+        $this->assertNotSame($left, $result);
+        $this->assertSame($rightTypes, $result->getTypes());
+    }
+
+    public function testTraverseSimultaneouslyReturnsOriginalWhenUnchanged(): void
+    {
+        $leftTypes = [new IntegerType(), new StringType()];
+        $rightTypes = [new StringType(), new IntegerType()];
+        $left = new ArrayMergeType($leftTypes);
+        $right = new ArrayMergeType($rightTypes);
+        $pairs = [];
+
+        $result = $left->traverseSimultaneously(
+            $right,
+            static function (Type $leftType, Type $rightType) use (&$pairs): Type {
+                $pairs[] = [$leftType, $rightType];
+
+                return $leftType;
+            },
+        );
+
+        $this->assertSame($left, $result);
+        $this->assertSame([
+            [$leftTypes[0], $rightTypes[0]],
+            [$leftTypes[1], $rightTypes[1]],
+        ], $pairs);
+    }
+
+    public function testTraverseSimultaneouslyIgnoresIncompatibleType(): void
+    {
+        $type = new ArrayMergeType([new IntegerType()]);
+        $called = false;
+
+        $result = $type->traverseSimultaneously(
+            new MixedType(),
+            static function (Type $leftType, Type $rightType) use (&$called): Type {
+                $called = true;
+
+                return $leftType;
+            },
+        );
+
+        $this->assertSame($type, $result);
+        $this->assertFalse($called);
+    }
+
+    public function testTraverseSimultaneouslyIgnoresDifferentArity(): void
+    {
+        $type = new ArrayMergeType([new IntegerType(), new StringType()]);
+        $called = false;
+
+        $result = $type->traverseSimultaneously(
+            new ArrayMergeType([new IntegerType()]),
+            static function (Type $leftType, Type $rightType) use (&$called): Type {
+                $called = true;
+
+                return $leftType;
+            },
+        );
+
+        $this->assertSame($type, $result);
+        $this->assertFalse($called);
     }
 }
