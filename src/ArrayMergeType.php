@@ -198,8 +198,15 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             $combinedItemType = null;
 
             foreach ($this->types as $type) {
-                /** @TODO don't handle more than one atm */
-                if (count($type->getArrays()) !== 1) {
+                $arrayKeyTypes = [];
+                $arrayItemTypes = [];
+
+                foreach ($type->getArrays() as $arrayType) {
+                    $arrayKeyTypes[] = $arrayType->getKeyType();
+                    $arrayItemTypes[] = $arrayType->getItemType();
+                }
+
+                if ([] === $arrayKeyTypes) {
                     return new ArrayType(new MixedType(true), new MixedType(true));
                 }
 
@@ -207,9 +214,8 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                     $atLeastOneNonEmpty = true;
                 }
 
-                $arrayType = $type->getArrays()[0];
-                $keyType = $arrayType->getKeyType();
-                $itemType = $arrayType->getItemType();
+                $keyType = TypeCombinator::union(...$arrayKeyTypes);
+                $itemType = TypeCombinator::union(...$arrayItemTypes);
                 $allIntegerKeys = $allIntegerKeys && (new IntegerType())->isSuperTypeOf($keyType)->yes();
 
                 if (!($keyType instanceof MixedType) && !$keyType->isInteger()->no()) {

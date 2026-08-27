@@ -17,4 +17,13 @@ assertType('array<string, int|string>', $possiblyEmpty);
 assertType('non-empty-list<int|string>', $numericKeys);
 
 /** @phpstan-var array-merge<array{a: int}|array{b: string}, array<string, bool>> $unionedShapes */
-assertType('array<mixed, mixed>', $unionedShapes);
+assertType('non-empty-array<string, bool|int|string>', $unionedShapes);
+
+/** @phpstan-var array-merge<array{1}|array{2, 3}, array<int, string>> $unionedLists */
+assertType('non-empty-list<1|2|3|string>', $unionedLists);
+
+/** @phpstan-var array-merge<array<int, 'left'>|array<string, 'right'>> $unionedGenericArrays */
+assertType("array<int<0, max>|string, 'left'|'right'>", $unionedGenericArrays);
+
+/** @phpstan-var array-merge<array{}|array{a: int}, array<string, bool>> $possiblyEmptyUnion */
+assertType('array<string, bool|int>', $possiblyEmptyUnion);
