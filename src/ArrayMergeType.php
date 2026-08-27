@@ -35,6 +35,7 @@ use PHPStan\Type\IntegerRangeType;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\LateResolvableType;
 use PHPStan\Type\MixedType;
+use PHPStan\Type\NeverType;
 use PHPStan\Type\Traits\LateResolvableTypeTrait;
 use PHPStan\Type\Traits\NonGeneralizableTypeTrait;
 use PHPStan\Type\Type;
@@ -137,11 +138,25 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         $nConstantLists = 0;
         $nConstantArrays = 0;
         $nOtherArrays = 0;
+        $types = [];
+        $arrayConstraint = new ArrayType(new MixedType(true), new MixedType(true));
 
         foreach ($this->types as $type) {
-            if ($type->isArray()->no()) {
+            $isArray = $type->isArray();
+
+            if ($isArray->no()) {
                 return new ErrorType();
             }
+
+            if (!$isArray->yes()) {
+                $type = TypeCombinator::intersect($type, $arrayConstraint);
+            }
+
+            if ($type->getIterableKeyType() instanceof NeverType) {
+                $type = ConstantArrayTypeBuilder::createEmpty()->getArray();
+            }
+
+            $types[] = $type;
 
             if ($type->isConstantArray()->yes()) {
                 if ($type->isList()->yes()) {
@@ -153,10 +168,10 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             }
         }
 
-        if ($nConstantLists === count($this->types)) {
+        if ($nConstantLists === count($types)) {
             $builder = ConstantArrayTypeBuilder::createEmpty();
 
-            foreach ($this->types as $type) {
+            foreach ($types as $type) {
                 $type = self::normalizeConstantArrayIntegerKeys($type);
                 if (null === $type) {
                     return new MixedType();
@@ -174,10 +189,10 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             return $builder->getArray();
         }
 
-        if ($nConstantArrays === count($this->types)) {
+        if ($nConstantArrays === count($types)) {
             $builder = ConstantArrayTypeBuilder::createEmpty();
 
-            foreach ($this->types as $type) {
+            foreach ($types as $type) {
                 $type = self::normalizeConstantArrayIntegerKeys($type);
                 if (null === $type) {
                     return new MixedType();
@@ -195,13 +210,13 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             return $builder->getArray();
         }
 
-        if ($nConstantArrays + $nOtherArrays === count($this->types)) {
+        if ($nConstantArrays + $nOtherArrays === count($types)) {
             $allIntegerKeys = true;
             $atLeastOneNonEmpty = false;
             $combinedKeyType = null;
             $combinedItemType = null;
 
-            foreach ($this->types as $type) {
+            foreach ($types as $type) {
                 $arrayKeyTypes = [];
                 $arrayItemTypes = [];
 

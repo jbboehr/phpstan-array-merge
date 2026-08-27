@@ -27,3 +27,15 @@ assertType("array<int<0, max>|string, 'left'|'right'>", $unionedGenericArrays);
 
 /** @phpstan-var array-merge<array{}|array{a: int}, array<string, bool>> $possiblyEmptyUnion */
 assertType('array<string, bool|int>', $possiblyEmptyUnion);
+
+/** @phpstan-var array-merge<array<int, string>|int> $maybeList */
+assertType('list<string>', $maybeList);
+
+/** @phpstan-var array-merge<array<string, int>|string> $maybeStringArray */
+assertType('array<string, int>', $maybeStringArray);
+
+/** @phpstan-var array-merge<array<never, string>|int> $maybeEmptyArray */
+assertType('array{}', $maybeEmptyArray);
+
+/** @phpstan-var array-merge<array<never, string>> $emptyArray */
+assertType('array{}', $emptyArray);
