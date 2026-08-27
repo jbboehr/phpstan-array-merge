@@ -139,6 +139,10 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         $nOtherArrays = 0;
 
         foreach ($this->types as $type) {
+            if ($type->isArray()->no()) {
+                return new ErrorType();
+            }
+
             if ($type->isConstantArray()->yes()) {
                 if ($type->isList()->yes()) {
                     $nConstantLists++;

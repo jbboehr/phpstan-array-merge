@@ -6,3 +6,12 @@ use function PHPStan\Testing\assertType;
 
 /** @phpstan-var array-merge $a */
 assertType("*ERROR*", $a);
+
+/** @phpstan-var array-merge<int> $nonArray */
+assertType("*ERROR*", $nonArray);
+
+/** @phpstan-var array-merge<array{}, string> $partiallyInvalid */
+assertType("*ERROR*", $partiallyInvalid);
+
+/** @phpstan-var array-merge<mixed> $maybeArray */
+assertType("array<mixed, mixed>", $maybeArray);
