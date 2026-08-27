@@ -39,3 +39,21 @@ assertType('array{}', $maybeEmptyArray);
 
 /** @phpstan-var array-merge<array<never, string>> $emptyArray */
 assertType('array{}', $emptyArray);
+
+/** @phpstan-var array-merge<array<string, never>|int> $maybeEmptyValueArray */
+assertType('array{}', $maybeEmptyValueArray);
+
+/** @phpstan-var array-merge<array<string, never>> $emptyValueArray */
+assertType('array{}', $emptyValueArray);
+
+/** @phpstan-var array-merge<non-empty-array<string, never>> $impossibleValueArray */
+assertType('*NEVER*', $impossibleValueArray);
+
+/** @phpstan-var array-merge<non-empty-array<never, string>> $impossibleKeyArray */
+assertType('*NEVER*', $impossibleKeyArray);
+
+/** @phpstan-var array-merge<array{required: never, other: int}> $impossibleRequiredOffset */
+assertType('*NEVER*', $impossibleRequiredOffset);
+
+/** @phpstan-var array-merge<array{optional?: never}> $optionalNeverOffset */
+assertType('array{}', $optionalNeverOffset);

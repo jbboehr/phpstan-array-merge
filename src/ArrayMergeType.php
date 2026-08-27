@@ -138,6 +138,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         $nConstantLists = 0;
         $nConstantArrays = 0;
         $nOtherArrays = 0;
+        $hasUninhabitedArray = false;
         $types = [];
         $arrayConstraint = new ArrayType(new MixedType(true), new MixedType(true));
 
@@ -152,8 +153,19 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 $type = TypeCombinator::intersect($type, $arrayConstraint);
             }
 
-            if ($type->getIterableKeyType() instanceof NeverType) {
-                $type = ConstantArrayTypeBuilder::createEmpty()->getArray();
+            if (
+                $type->getIterableKeyType() instanceof NeverType
+                || $type->getIterableValueType() instanceof NeverType
+            ) {
+                if ($type->isIterableAtLeastOnce()->yes()) {
+                    $hasUninhabitedArray = true;
+                } else {
+                    $type = ConstantArrayTypeBuilder::createEmpty()->getArray();
+                }
+            }
+
+            if (self::containsOnlyUninhabitedConstantArrays($type)) {
+                $hasUninhabitedArray = true;
             }
 
             $types[] = $type;
@@ -166,6 +178,10 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             } elseif ($type->isArray()->yes()) {
                 $nOtherArrays++;
             }
+        }
+
+        if ($hasUninhabitedArray) {
+            return new NeverType();
         }
 
         if ($nConstantLists === count($types)) {
@@ -265,6 +281,36 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return new ArrayType(new MixedType(true), new MixedType(true));
+    }
+
+    private static function containsOnlyUninhabitedConstantArrays(Type $type): bool
+    {
+        if (!$type->isConstantArray()->yes()) {
+            return false;
+        }
+
+        $constantArrayTypes = $type->getConstantArrays();
+
+        if ([] === $constantArrayTypes) {
+            return false;
+        }
+
+        foreach ($constantArrayTypes as $constantArrayType) {
+            $isUninhabited = false;
+
+            foreach ($constantArrayType->getValueTypes() as $i => $valueType) {
+                if (!$constantArrayType->isOptionalKey($i) && $valueType instanceof NeverType) {
+                    $isUninhabited = true;
+                    break;
+                }
+            }
+
+            if (!$isUninhabited) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static function normalizeConstantArrayIntegerKeys(Type $type): ?Type
