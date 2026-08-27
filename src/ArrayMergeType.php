@@ -302,7 +302,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         foreach ($this->types as $type) {
             $newType = $cb($type);
             $newTypes[] = $newType;
-            if ($newType !== $type && !$newType->equals($type)) {
+            if ($newType !== $type) {
                 $replace = true;
             }
         }

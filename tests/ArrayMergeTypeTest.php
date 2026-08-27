@@ -109,6 +109,38 @@ final class ArrayMergeTypeTest extends TestCase
         $this->assertSame('array-merge<array<stdClass>, array<Throwable>>', $printer->print($type->toPhpDocNode()));
     }
 
+    public function testTraversePreservesEqualReplacementInstance(): void
+    {
+        $originalType = new IntegerType();
+        $replacementType = new IntegerType();
+        $type = new ArrayMergeType([$originalType]);
+
+        $this->assertNotSame($originalType, $replacementType);
+        $this->assertTrue($originalType->equals($replacementType));
+
+        $result = $type->traverse(static fn(Type $type): Type => $replacementType);
+
+        $this->assertInstanceOf(ArrayMergeType::class, $result);
+        $this->assertNotSame($type, $result);
+        $this->assertSame([$replacementType], $result->getTypes());
+    }
+
+    public function testTraverseReturnsOriginalWhenUnchanged(): void
+    {
+        $types = [new IntegerType(), new StringType()];
+        $type = new ArrayMergeType($types);
+        $visitedTypes = [];
+
+        $result = $type->traverse(static function (Type $type) use (&$visitedTypes): Type {
+            $visitedTypes[] = $type;
+
+            return $type;
+        });
+
+        $this->assertSame($type, $result);
+        $this->assertSame($types, $visitedTypes);
+    }
+
     public function testTraverseSimultaneously(): void
     {
         $left = new ArrayMergeType([new IntegerType(), new StringType()]);
