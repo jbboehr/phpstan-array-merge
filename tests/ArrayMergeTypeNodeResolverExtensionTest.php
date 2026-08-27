@@ -39,6 +39,7 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
     {
         yield [__DIR__ . '/data/invalid.php'];
         yield [__DIR__ . '/data/basic.php'];
+        yield [__DIR__ . '/data/constant-unions.php'];
         yield [__DIR__ . '/data/generic.php'];
         yield [__DIR__ . '/data/generic-constant-list.php'];
         yield [__DIR__ . '/data/generic-const.php'];

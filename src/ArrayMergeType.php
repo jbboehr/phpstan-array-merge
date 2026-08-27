@@ -28,6 +28,7 @@ use PHPStan\Type\ArrayType;
 use PHPStan\Type\CompoundType;
 use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
 use PHPStan\Type\Constant\ConstantIntegerType;
+use PHPStan\Type\Constant\ConstantStringType;
 use PHPStan\Type\ErrorType;
 use PHPStan\Type\Generic\TemplateTypeVariance;
 use PHPStan\Type\IntegerRangeType;
@@ -152,15 +153,17 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             $builder = ConstantArrayTypeBuilder::createEmpty();
 
             foreach ($this->types as $type) {
-                /** @TODO don't handle more than one atm */
-                if (count($type->getConstantArrays()) !== 1) {
+                $type = self::normalizeConstantArrayIntegerKeys($type);
+                if (null === $type) {
                     return new MixedType();
                 }
-                $constantArrayType = $type->getConstantArrays()[0];
-                $valueTypes = $constantArrayType->getValueTypes();
 
-                foreach ($valueTypes as $i => $valueType) {
-                    $builder->setOffsetValueType(null, $valueType, $constantArrayType->isOptionalKey($i));
+                foreach (self::getConstantArrayKeyTypes($type) as $keyType) {
+                    $builder->setOffsetValueType(
+                        null,
+                        $type->getOffsetValueType($keyType),
+                        !$type->hasOffsetValueType($keyType)->yes(),
+                    );
                 }
             }
 
@@ -171,28 +174,16 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             $builder = ConstantArrayTypeBuilder::createEmpty();
 
             foreach ($this->types as $type) {
-                /** @TODO don't handle more than one atm */
-                if (count($type->getConstantArrays()) !== 1) {
+                $type = self::normalizeConstantArrayIntegerKeys($type);
+                if (null === $type) {
                     return new MixedType();
                 }
 
-                $constantArrayType = $type->getConstantArrays()[0];
-
-                $keyTypes = $constantArrayType->getKeyTypes();
-                $valueTypes = $constantArrayType->getValueTypes();
-                $l = count($keyTypes);
-
-                if ($l !== count($valueTypes)) {
-                    return new MixedType();
-                }
-
-                for ($i = 0; $i < $l; $i++) {
-                    $keyType = $keyTypes[$i];
-
+                foreach (self::getConstantArrayKeyTypes($type) as $keyType) {
                     $builder->setOffsetValueType(
                         $keyType instanceof ConstantIntegerType ? null : $keyType,
-                        $valueTypes[$i],
-                        $constantArrayType->isOptionalKey($i),
+                        $type->getOffsetValueType($keyType),
+                        !$type->hasOffsetValueType($keyType)->yes(),
                     );
                 }
             }
@@ -249,6 +240,49 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return new ArrayType(new MixedType(true), new MixedType(true));
+    }
+
+    private static function normalizeConstantArrayIntegerKeys(Type $type): ?Type
+    {
+        $normalizedTypes = [];
+
+        foreach ($type->getConstantArrays() as $constantArrayType) {
+            $builder = ConstantArrayTypeBuilder::createEmpty();
+            $keyTypes = $constantArrayType->getKeyTypes();
+            $valueTypes = $constantArrayType->getValueTypes();
+
+            if (count($keyTypes) !== count($valueTypes)) {
+                return null;
+            }
+
+            foreach ($keyTypes as $i => $keyType) {
+                $builder->setOffsetValueType(
+                    $keyType instanceof ConstantIntegerType ? null : $keyType,
+                    $valueTypes[$i],
+                    $constantArrayType->isOptionalKey($i),
+                );
+            }
+
+            $normalizedTypes[] = $builder->getArray();
+        }
+
+        return [] === $normalizedTypes ? null : TypeCombinator::union(...$normalizedTypes);
+    }
+
+    /**
+     * @return array<int|string, ConstantIntegerType|ConstantStringType>
+     */
+    private static function getConstantArrayKeyTypes(Type $type): array
+    {
+        $keyTypes = [];
+
+        foreach ($type->getConstantArrays() as $constantArrayType) {
+            foreach ($constantArrayType->getKeyTypes() as $keyType) {
+                $keyTypes[$keyType->getValue()] = $keyType;
+            }
+        }
+
+        return $keyTypes;
     }
 
     /**
