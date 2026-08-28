@@ -19,6 +19,7 @@ declare(strict_types=1);
 
 namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
+use Brick\VarExporter\VarExporter;
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
 use PHPStan\PhpDocParser\Printer\Printer;
 use PHPStan\Testing\PHPStanTestCase;
@@ -170,6 +171,22 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
 
         $this->assertInstanceOf(ArrayMergeType::class, $result);
         $this->assertSame([$arrayType], $result->getTypes());
+    }
+
+    public function testVarExporterRoundTrip(): void
+    {
+        $type = new ArrayMergeType([new MixedType(true)]);
+        $expectedResult = $type->resolve();
+
+        /** @var mixed $restored */
+        $restored = eval('return ' . VarExporter::export($type) . ';');
+
+        $this->assertInstanceOf(ArrayMergeType::class, $restored);
+        $restoredOperand = $restored->getTypes()[0];
+        $this->assertInstanceOf(MixedType::class, $restoredOperand);
+        $this->assertTrue($restoredOperand->isExplicitMixed());
+        $this->assertTrue($type->equals($restored));
+        $this->assertTrue($expectedResult->equals($restored->resolve()));
     }
 
     public function testToPhpDocNode(): void
