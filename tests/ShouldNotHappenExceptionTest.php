@@ -21,6 +21,7 @@ namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
 use jbboehr\PHPStan\ArrayMerge\ShouldNotHappenException;
 use PHPUnit\Framework\TestCase;
+use function substr_count;
 
 final class ShouldNotHappenExceptionTest extends TestCase
 {
@@ -32,6 +33,28 @@ final class ShouldNotHappenExceptionTest extends TestCase
             ShouldNotHappenException::rethrow($expected);
         } catch (ShouldNotHappenException $actual) {
             $this->assertSame($expected, $actual);
+        }
+    }
+
+    public function testRethrowWrapsForeignExceptionWithDiagnosticContext(): void
+    {
+        $expectedPrevious = new \LogicException('Foreign failure', 17);
+
+        try {
+            ShouldNotHappenException::rethrow($expectedPrevious);
+        } catch (ShouldNotHappenException $actual) {
+            $this->assertStringStartsWith(
+                'Foreign failure, please open an issue on GitHub ',
+                $actual->getMessage(),
+            );
+            $this->assertSame(
+                1,
+                substr_count(
+                    $actual->getMessage(),
+                    'https://github.com/jbboehr/phpstan-array-merge/issues',
+                ),
+            );
+            $this->assertSame($expectedPrevious, $actual->getPrevious());
         }
     }
 }
