@@ -19,9 +19,11 @@ declare(strict_types=1);
 
 namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
+use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeTypeNodeResolverExtension;
 use jbboehr\PHPStan\ArrayMerge\ShouldNotHappenException;
 use PHPStan\Analyser\NameScope;
+use PHPStan\PhpDoc\TypeNodeResolver;
 use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
 use PHPStan\Testing\TypeInferenceTestCase;
@@ -30,6 +32,7 @@ use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
 use PHPStan\Type\Constant\ConstantStringType;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\MixedType;
+use PHPStan\Type\Type;
 use PHPStan\Type\VerbosityLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
 use function str_contains;
@@ -174,6 +177,33 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
         $typeNode = new GenericTypeNode(new IdentifierTypeNode('array-merge'), []);
 
         $this->assertNull($resolver->resolve($typeNode, new NameScope(null, [])));
+    }
+
+    public function testNestedArrayMergeIsFlattenedInOperandOrder(): void
+    {
+        $arrayTypeNode = static fn(string $itemType): GenericTypeNode => new GenericTypeNode(
+            new IdentifierTypeNode('array'),
+            [new IdentifierTypeNode($itemType)],
+        );
+        $typeNode = new GenericTypeNode(new IdentifierTypeNode('array-merge'), [
+            new GenericTypeNode(new IdentifierTypeNode('array-merge'), [
+                $arrayTypeNode('int'),
+                $arrayTypeNode('string'),
+            ]),
+            $arrayTypeNode('bool'),
+        ]);
+
+        $resolver = self::getContainer()->getByType(TypeNodeResolver::class);
+        $result = $resolver->resolve($typeNode, new NameScope(null, []));
+
+        $this->assertInstanceOf(ArrayMergeType::class, $result);
+        $this->assertSame(
+            ['array<int>', 'array<string>', 'array<bool>'],
+            array_map(
+                static fn(Type $type): string => $type->describe(VerbosityLevel::precise()),
+                $result->getTypes(),
+            ),
+        );
     }
 
     public static function getAdditionalConfigFiles(): array
