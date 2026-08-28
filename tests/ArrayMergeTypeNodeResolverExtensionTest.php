@@ -43,23 +43,23 @@ use function substr;
 final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCase
 {
     /**
-     * @return \Generator<array{string}>
+     * @return \Generator<string, array{string}>
      */
     public static function dataFileProvider(): \Generator
     {
-        yield [__DIR__ . '/data/invalid.php'];
-        yield [__DIR__ . '/data/basic.php'];
-        yield [__DIR__ . '/data/constant-unions.php'];
-        yield [__DIR__ . '/data/generic.php'];
-        yield [__DIR__ . '/data/generic-constant-list.php'];
-        yield [__DIR__ . '/data/generic-const.php'];
-        yield [__DIR__ . '/data/mixed-shapes.php'];
-        yield [__DIR__ . '/data/mixed-lists.php'];
-        yield [__DIR__ . '/data/multi-const-var.php'];
-        yield [__DIR__ . '/data/nested.php'];
-        yield [__DIR__ . '/data/non-empty.php'];
-        yield [__DIR__ . '/data/numeric-keys.php'];
-        yield [__DIR__ . '/data/optional-lists.php'];
+        yield 'invalid operands' => [__DIR__ . '/data/invalid.php'];
+        yield 'basic arrays' => [__DIR__ . '/data/basic.php'];
+        yield 'constant array unions' => [__DIR__ . '/data/constant-unions.php'];
+        yield 'generic arrays' => [__DIR__ . '/data/generic.php'];
+        yield 'generic and constant lists' => [__DIR__ . '/data/generic-constant-list.php'];
+        yield 'generic and constant arrays' => [__DIR__ . '/data/generic-const.php'];
+        yield 'mixed array shapes' => [__DIR__ . '/data/mixed-shapes.php'];
+        yield 'mixed list types' => [__DIR__ . '/data/mixed-lists.php'];
+        yield 'multiple constant arrays and variables' => [__DIR__ . '/data/multi-const-var.php'];
+        yield 'nested array merges' => [__DIR__ . '/data/nested.php'];
+        yield 'non-empty arrays' => [__DIR__ . '/data/non-empty.php'];
+        yield 'numeric keys' => [__DIR__ . '/data/numeric-keys.php'];
+        yield 'optional list elements' => [__DIR__ . '/data/optional-lists.php'];
     }
 
     /**
