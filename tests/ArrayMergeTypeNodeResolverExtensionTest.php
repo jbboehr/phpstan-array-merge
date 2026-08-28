@@ -50,6 +50,7 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
         yield 'invalid operands' => [__DIR__ . '/data/invalid.php'];
         yield 'basic arrays' => [__DIR__ . '/data/basic.php'];
         yield 'constant array unions' => [__DIR__ . '/data/constant-unions.php'];
+        yield 'native array_merge parity' => [__DIR__ . '/data/differential.php'];
         yield 'generic arrays' => [__DIR__ . '/data/generic.php'];
         yield 'generic and constant lists' => [__DIR__ . '/data/generic-constant-list.php'];
         yield 'generic and constant arrays' => [__DIR__ . '/data/generic-const.php'];
