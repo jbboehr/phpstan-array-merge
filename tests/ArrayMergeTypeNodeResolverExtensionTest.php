@@ -158,16 +158,20 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
         return 'array{08: int}' === $builder->getArray()->describe(VerbosityLevel::precise());
     }
 
-    public function testExceptionConversion(): void
+    public function testChildResolverExceptionConversion(): void
     {
         $resolver = new ArrayMergeTypeNodeResolverExtension();
+        $resolver->setTypeNodeResolver(self::getContainer()->getByType(TypeNodeResolver::class));
 
         /** @phpstan-ignore-next-line argument.type */
         $typeNode = new GenericTypeNode(new IdentifierTypeNode('array-merge'), [1, 2, 3]);
 
-        $this->expectException(ShouldNotHappenException::class);
-
-        $resolver->resolve($typeNode, new NameScope(null, []));
+        try {
+            $resolver->resolve($typeNode, new NameScope(null, []));
+            $this->fail('Expected the child resolver error to be converted.');
+        } catch (ShouldNotHappenException $actual) {
+            $this->assertInstanceOf(\TypeError::class, $actual->getPrevious());
+        }
     }
 
     public function testEmptyGenericTypesReturnsNull(): void
