@@ -210,6 +210,25 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
         );
     }
 
+    public function testPhpDocNodeRoundTripPreservesOperandMetadata(): void
+    {
+        $expected = new ArrayMergeType([
+            new MixedType(true),
+            new ArrayType(new IntegerType(), new IntegerType()),
+        ]);
+
+        $resolver = self::getContainer()->getByType(TypeNodeResolver::class);
+        $actual = $resolver->resolve($expected->toPhpDocNode(), new NameScope(null, []));
+
+        $this->assertInstanceOf(ArrayMergeType::class, $actual);
+        $actualOperands = $actual->getTypes();
+        $this->assertCount(2, $actualOperands);
+        $this->assertInstanceOf(MixedType::class, $actualOperands[0]);
+        $this->assertTrue($actualOperands[0]->isExplicitMixed());
+        $this->assertTrue($expected->equals($actual));
+        $this->assertTrue($expected->resolve()->equals($actual->resolve()));
+    }
+
     public static function getAdditionalConfigFiles(): array
     {
         return [__DIR__ . '/../extension.neon'];
