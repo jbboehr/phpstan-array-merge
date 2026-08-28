@@ -24,7 +24,7 @@
         "brick/varexporter": "*",
         "phpstan/phpstan-phpunit": "^1.4.2 || ^2.0.6",
         "phpstan/phpstan-strict-rules": "^1.6.2 || ^2.0.4",
-        "phpunit/phpunit": "^9.6 || ^10.5 || ^11.5",
+        "phpunit/phpunit": "^10.5.62 || ^11.5.50",
         "slevomat/coding-standard": "^8.18",
         "squizlabs/php_codesniffer": "^3.13",
         "symfony/var-dumper": "*"

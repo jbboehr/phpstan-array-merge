@@ -157,6 +157,48 @@ jobs:
       - name: Run test suite
         run: composer phpunit -- --no-coverage
 
+  phpunit-compatibility:
+    runs-on: ubuntu-latest
+    name: Compatibility | PHPUnit ${{ matrix.phpunit-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php-version: "8.1"
+            phpunit-version: "10.5.62"
+          - php-version: "8.2"
+            phpunit-version: "11.5.50"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          coverage: none
+          php-version: ${{ matrix.php-version }}
+          tools: composer:v2
+
+      - name: Find Composer cache directory
+        id: composer-cache
+        run: echo "path=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.path }}
+          key: composer-${{ runner.os }}-${{ runner.arch }}-php-${{ matrix.php-version }}-phpunit-${{ matrix.phpunit-version }}-${{ hashFiles('composer.json', 'composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-${{ runner.arch }}-php-${{ matrix.php-version }}-phpunit-${{ matrix.phpunit-version }}-
+
+      - name: Install compatibility dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies phpunit/phpunit:${{ matrix.phpunit-version }}
+
+      - name: Run test suite
+        run: composer phpunit -- --no-coverage
+
   coverage:
     runs-on: ubuntu-latest
     name: Coverage | PHP 8.5
