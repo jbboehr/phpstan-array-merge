@@ -39,3 +39,6 @@ assertType("array{'a'}", $negative);
 
 /** @phpstan-var array-merge<array{'08': 'a', 2: 'b'}> $numericString */
 assertType("array{'08': 'a', 0: 'b'}", $numericString);
+
+/** @phpstan-var array-merge<array{'08': 'a', 2: 'b'}, array{tail: 'c'}> $numericStringWithTail */
+assertType("array{'08': 'a', 0: 'b', tail: 'c'}", $numericStringWithTail);

@@ -111,6 +111,52 @@ jobs:
       - name: Run test suite
         run: composer phpunit -- --no-coverage
 
+  phpstan-compatibility:
+    runs-on: ubuntu-latest
+    name: Compatibility | PHPStan ${{ matrix.phpstan-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - phpstan-version: "1.12"
+            phpstan-constraint: "^1.12"
+            phpstan-phpunit-constraint: "^1.4.2"
+            phpstan-strict-rules-constraint: "^1.6.2"
+          - phpstan-version: "2.0.4"
+            phpstan-constraint: "2.0.4"
+            phpstan-phpunit-constraint: "2.0.6"
+            phpstan-strict-rules-constraint: "2.0.4"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          coverage: none
+          php-version: "8.1"
+          tools: composer:v2
+
+      - name: Find Composer cache directory
+        id: composer-cache
+        run: echo "path=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.path }}
+          key: composer-${{ runner.os }}-${{ runner.arch }}-php-8.1-phpstan-${{ matrix.phpstan-version }}-${{ hashFiles('composer.json', 'composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-${{ runner.arch }}-php-8.1-phpstan-${{ matrix.phpstan-version }}-
+
+      - name: Install compatibility dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies phpstan/phpstan:${{ matrix.phpstan-constraint }} phpstan/phpstan-phpunit:${{ matrix.phpstan-phpunit-constraint }} phpstan/phpstan-strict-rules:${{ matrix.phpstan-strict-rules-constraint }}
+
+      - name: Run test suite
+        run: composer phpunit -- --no-coverage
+
   coverage:
     runs-on: ubuntu-latest
     name: Coverage | PHP 8.5
