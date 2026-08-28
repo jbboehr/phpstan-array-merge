@@ -135,7 +135,6 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
     protected function getResult(): Type
     {
-        $nConstantLists = 0;
         $nConstantArrays = 0;
         $nOtherArrays = 0;
         $hasUninhabitedArray = false;
@@ -171,9 +170,6 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             $types[] = $type;
 
             if ($type->isConstantArray()->yes()) {
-                if ($type->isList()->yes()) {
-                    $nConstantLists++;
-                }
                 $nConstantArrays++;
             } elseif ($type->isArray()->yes()) {
                 $nOtherArrays++;
@@ -182,27 +178,6 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
         if ($hasUninhabitedArray) {
             return new NeverType();
-        }
-
-        if ($nConstantLists === count($types)) {
-            $builder = ConstantArrayTypeBuilder::createEmpty();
-
-            foreach ($types as $type) {
-                $type = self::normalizeConstantArrayIntegerKeys($type);
-                if (null === $type) {
-                    return new MixedType();
-                }
-
-                foreach (self::getConstantArrayKeyTypes($type) as $keyType) {
-                    $builder->setOffsetValueType(
-                        null,
-                        $type->getOffsetValueType($keyType),
-                        !$type->hasOffsetValueType($keyType)->yes(),
-                    );
-                }
-            }
-
-            return $builder->getArray();
         }
 
         if ($nConstantArrays === count($types)) {
