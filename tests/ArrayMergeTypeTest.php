@@ -21,18 +21,29 @@ namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
 use PHPStan\PhpDocParser\Printer\Printer;
+use PHPStan\Testing\PHPStanTestCase;
 use PHPStan\Type\ArrayType;
 use PHPStan\Type\ErrorType;
+use PHPStan\Type\Generic\TemplateType;
+use PHPStan\Type\Generic\TemplateTypeVariance;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\MixedType;
 use PHPStan\Type\ObjectType;
 use PHPStan\Type\StringType;
 use PHPStan\Type\Type;
 use PHPStan\Type\VerbosityLevel;
-use PHPUnit\Framework\TestCase;
+use function array_map;
+use function spl_object_id;
 
-final class ArrayMergeTypeTest extends TestCase
+final class ArrayMergeTypeTest extends PHPStanTestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        self::getContainer();
+    }
+
     public function testGetTypes(): void
     {
         $types = [new MixedType()];
@@ -50,6 +61,31 @@ final class ArrayMergeTypeTest extends TestCase
         $this->assertSame(['stdClass', 'Throwable'], $type->getReferencedClasses());
     }
 
+    public function testGetReferencedTemplateTypes(): void
+    {
+        $variance = TemplateTypeVariance::createInvariant();
+        $firstReference = new \stdClass();
+        $secondReference = new \stdClass();
+        $firstType = $this->createMock(Type::class);
+        $secondType = $this->createMock(Type::class);
+        $firstType->expects(self::once())
+            ->method('getReferencedTemplateTypes')
+            ->with($variance)
+            ->willReturn([$firstReference]);
+        $secondType->expects(self::once())
+            ->method('getReferencedTemplateTypes')
+            ->with($variance)
+            ->willReturn([$secondReference]);
+        $type = new ArrayMergeType([$firstType, $secondType]);
+
+        $references = $type->getReferencedTemplateTypes($variance);
+
+        $this->assertSame(
+            [spl_object_id($firstReference), spl_object_id($secondReference)],
+            array_map(static fn(object $reference): int => spl_object_id($reference), $references),
+        );
+    }
+
     public function testEquals(): void
     {
         $left = new ArrayMergeType([new MixedType()]);
@@ -57,6 +93,7 @@ final class ArrayMergeTypeTest extends TestCase
 
         $multiLeft = new ArrayMergeType([new IntegerType(), new StringType()]);
         $multiRight = new ArrayMergeType([new IntegerType(), new StringType()]);
+        $sharedPrefix = new ArrayMergeType([new MixedType(), new StringType()]);
 
         $this->assertFalse($left->equals($right));
         $this->assertFalse($right->equals($left));
@@ -64,7 +101,16 @@ final class ArrayMergeTypeTest extends TestCase
         $this->assertTrue($multiRight->equals($multiLeft));
         $this->assertFalse($left->equals($multiLeft));
         $this->assertFalse($multiLeft->equals($left));
+        $this->assertFalse($left->equals($sharedPrefix));
         $this->assertFalse($left->equals(new IntegerType()));
+    }
+
+    public function testIsResolvable(): void
+    {
+        $template = $this->createMock(TemplateType::class);
+
+        $this->assertTrue((new ArrayMergeType([new ArrayType(new IntegerType(), new StringType())]))->isResolvable());
+        $this->assertFalse((new ArrayMergeType([$template]))->isResolvable());
     }
 
     public function testDescribe(): void
@@ -78,8 +124,34 @@ final class ArrayMergeTypeTest extends TestCase
         $this->assertSame('array<stdClass|Throwable>', $type->resolve()->describe(VerbosityLevel::precise()));
     }
 
+    public function testResolvePreservesExplicitMixedForMaybeArrayOperand(): void
+    {
+        $result = (new ArrayMergeType([new MixedType(true)]))->resolve();
+        $arrays = $result->getArrays();
+
+        $this->assertCount(1, $arrays);
+        $this->assertInstanceOf(MixedType::class, $arrays[0]->getKeyType());
+        $this->assertTrue($arrays[0]->getKeyType()->isExplicitMixed());
+        $this->assertInstanceOf(MixedType::class, $arrays[0]->getItemType());
+        $this->assertTrue($arrays[0]->getItemType()->isExplicitMixed());
+    }
+
+    public function testResolveUsesOverriddenResult(): void
+    {
+        $type = new class ([new MixedType()]) extends ArrayMergeType {
+            protected function getResult(): Type
+            {
+                return new StringType();
+            }
+        };
+
+        $this->assertInstanceOf(StringType::class, $type->resolve());
+    }
+
     public function testSetState(): void
     {
+        $arrayType = new ArrayType(new MixedType(), new ObjectType('stdClass'));
+
         $this->assertInstanceOf(ErrorType::class, ArrayMergeType::__set_state([
             'types' => true,
         ]));
@@ -92,9 +164,12 @@ final class ArrayMergeTypeTest extends TestCase
             'types' => [true],
         ]));
 
-        $this->assertInstanceOf(ArrayMergeType::class, ArrayMergeType::__set_state([
-            'types' => [new ArrayType(new MixedType(), new ObjectType('stdClass'))],
-        ]));
+        $result = ArrayMergeType::__set_state([
+            'types' => ['array' => $arrayType],
+        ]);
+
+        $this->assertInstanceOf(ArrayMergeType::class, $result);
+        $this->assertSame([$arrayType], $result->getTypes());
     }
 
     public function testToPhpDocNode(): void
