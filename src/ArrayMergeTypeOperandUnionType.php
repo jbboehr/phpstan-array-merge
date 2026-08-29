@@ -24,6 +24,7 @@ use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\NeverType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeCombinator;
+use PHPStan\Type\TypeUtils;
 use PHPStan\Type\UnionType;
 
 /**
@@ -36,12 +37,50 @@ use PHPStan\Type\UnionType;
  */
 final class ArrayMergeTypeOperandUnionType extends UnionType
 {
+    /** @var non-empty-list<Type> */
+    private array $sourceTypes;
+
+    /**
+     * @param non-empty-list<Type> $types
+     * @param non-empty-list<Type>|null $sourceTypes
+     */
+    public function __construct(array $types, ?array $sourceTypes = null)
+    {
+        parent::__construct($types);
+
+        $this->sourceTypes = $sourceTypes ?? $types;
+    }
+
+    public function equals(Type $type): bool
+    {
+        if (!($type instanceof self) || !parent::equals($type)) {
+            return false;
+        }
+
+        $otherSourceTypes = $type->sourceTypes;
+
+        foreach ($this->sourceTypes as $sourceType) {
+            foreach ($otherSourceTypes as $i => $otherSourceType) {
+                if (!$sourceType->equals($otherSourceType)) {
+                    continue;
+                }
+
+                unset($otherSourceTypes[$i]);
+                continue 2;
+            }
+
+            return false;
+        }
+
+        return [] === $otherSourceTypes;
+    }
+
     public function traverse(callable $cb): Type
     {
         $types = [];
         $replace = false;
 
-        foreach ($this->getTypes() as $type) {
+        foreach ($this->sourceTypes as $type) {
             $newType = $cb($type);
             $types[] = $newType;
             if ($newType !== $type) {
@@ -59,16 +98,20 @@ final class ArrayMergeTypeOperandUnionType extends UnionType
         ));
         $flattenedTypes = self::flattenOrdinaryUnions($types);
 
+        if ([] === $flattenedTypes) {
+            return $types[0];
+        }
+
         foreach ($flattenedTypes as $type) {
-            if ($type instanceof UnionType && $type instanceof TemplateType) {
+            if (TypeUtils::containsTemplateType($type)) {
                 $benevolentType = self::getCoveringBenevolentUnion($typesWithoutNever);
                 if (null !== $benevolentType) {
                     return new ArrayMergeTypeOperandBenevolentUnionType(
-                        $benevolentType->getTypes(),
+                        $flattenedTypes,
                     );
                 }
 
-                return new self($flattenedTypes);
+                return new self($flattenedTypes, $types);
             }
         }
 
@@ -92,7 +135,6 @@ final class ArrayMergeTypeOperandUnionType extends UnionType
             if (
                 !$candidate instanceof BenevolentUnionType
                 || $candidate instanceof TemplateType
-                || !self::containsTemplateUnion($candidate->getTypes())
             ) {
                 continue;
             }
@@ -109,20 +151,6 @@ final class ArrayMergeTypeOperandUnionType extends UnionType
         }
 
         return null;
-    }
-
-    /**
-     * @param list<Type> $types
-     */
-    private static function containsTemplateUnion(array $types): bool
-    {
-        foreach ($types as $type) {
-            if ($type instanceof UnionType && $type instanceof TemplateType) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
