@@ -24,7 +24,10 @@ use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
 use PHPStan\PhpDoc\TypeStringResolver;
 use PHPStan\PhpDocParser\Printer\Printer;
 use PHPStan\Testing\PHPStanTestCase;
+use PHPStan\TrinaryLogic;
+use PHPStan\Type\Accessory\AccessoryDecimalIntegerStringType;
 use PHPStan\Type\ArrayType;
+use PHPStan\Type\BooleanType;
 use PHPStan\Type\ClosureType;
 use PHPStan\Type\Constant\ConstantArrayType;
 use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
@@ -34,11 +37,13 @@ use PHPStan\Type\ErrorType;
 use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Generic\TemplateTypeVariance;
 use PHPStan\Type\IntegerType;
+use PHPStan\Type\IntersectionType;
 use PHPStan\Type\MixedType;
 use PHPStan\Type\NeverType;
 use PHPStan\Type\ObjectType;
 use PHPStan\Type\StringType;
 use PHPStan\Type\Type;
+use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
 use function array_map;
 use function is_callable;
@@ -222,6 +227,296 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         $this->assertInstanceOf(ConstantArrayType::class, $result);
         $this->assertCount(1, $result->getKeyTypes());
         $this->assertTrue((new ConstantIntegerType(0))->equals($result->getKeyTypes()[0]));
+    }
+
+    public function testResolveFallsBackWhenLargeListNormalizationDegrades(): void
+    {
+        $operandKeyTypes = [];
+        $valueTypes = [];
+
+        for ($i = 0; $i <= 256; $i++) {
+            $operandKeyTypes[] = new ConstantIntegerType(1000 + $i);
+            $valueTypes[] = new ConstantStringType('value' . $i);
+        }
+
+        $operand = new ConstantArrayType($operandKeyTypes, $valueTypes, [1257]);
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertTrue($result->isIterableAtLeastOnce()->yes());
+        $this->assertTrue($result->isList()->yes());
+        $this->assertTrue(
+            $result->getIterableKeyType()->isSuperTypeOf(new ConstantIntegerType(256))->yes(),
+        );
+        $this->assertTrue(
+            $result->getIterableValueType()->isSuperTypeOf(new ConstantStringType('value0'))->yes(),
+        );
+        $this->assertTrue(
+            $result->getIterableValueType()->isSuperTypeOf(new ConstantStringType('value256'))->yes(),
+        );
+    }
+
+    public function testDegradedConstantUnionReindexesCanonicalIntegerStringKey(): void
+    {
+        $leftKeyTypes = [new ConstantStringType('7')];
+        $leftValueTypes = [new ConstantStringType('numeric')];
+        $rightKeyTypes = [];
+        $rightValueTypes = [];
+
+        for ($i = 0; $i < 31; $i++) {
+            $leftKeyTypes[] = new ConstantStringType('left' . $i);
+            $leftValueTypes[] = new ConstantStringType('left-value' . $i);
+        }
+
+        for ($i = 0; $i < 32; $i++) {
+            $rightKeyTypes[] = new ConstantStringType('right' . $i);
+            $rightValueTypes[] = new ConstantStringType('right-value' . $i);
+        }
+
+        $operand = new UnionType([
+            new ConstantArrayType($leftKeyTypes, $leftValueTypes),
+            new ConstantArrayType($rightKeyTypes, $rightValueTypes),
+        ]);
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertTrue(
+            $result->getIterableKeyType()->isSuperTypeOf(new ConstantIntegerType(0))->yes(),
+            'array_merge() reindexes the canonical integer-string key to integer key 0.',
+        );
+    }
+
+    public function testGenericUnionReindexesCanonicalIntegerStringKey(): void
+    {
+        $operand = new UnionType([
+            new ConstantArrayType(
+                [new ConstantStringType('7')],
+                [new ConstantStringType('numeric')],
+            ),
+            new ArrayType(new StringType(), new IntegerType()),
+        ]);
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertTrue(
+            $result->getIterableKeyType()->isSuperTypeOf(new ConstantIntegerType(0))->yes(),
+        );
+        $this->assertTrue(
+            $result->getIterableKeyType()->isSuperTypeOf(new ConstantStringType('key'))->yes(),
+        );
+    }
+
+    public function testDegradedUnsealedArrayReindexesExplicitCanonicalIntegerStringKey(): void
+    {
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+
+        if (!self::hasOptionalMethod($builder, 'makeUnsealed')) {
+            $this->assertFalse(self::hasOptionalMethod($builder, 'makeUnsealed'));
+            return;
+        }
+
+        $keyTypes = [new ConstantStringType('7')];
+        $valueTypes = [new ConstantStringType('numeric')];
+
+        for ($i = 0; $i < 256; $i++) {
+            $keyTypes[] = new ConstantStringType('key' . $i);
+            $valueTypes[] = new ConstantIntegerType($i);
+        }
+
+        $operand = new ConstantArrayType(
+            $keyTypes,
+            $valueTypes,
+            [0],
+            [],
+            TrinaryLogic::createMaybe(),
+            [new StringType(), new StringType()],
+        );
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertTrue(
+            $result->getIterableKeyType()->isSuperTypeOf(new ConstantIntegerType(0))->yes(),
+        );
+        $this->assertTrue(
+            $result->getIterableKeyType()->isSuperTypeOf(new ConstantStringType('extra'))->yes(),
+        );
+    }
+
+    public function testDegradedUnsealedArrayReindexesCanonicalIntegerStringTail(): void
+    {
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+
+        if (!self::hasOptionalMethod($builder, 'makeUnsealed')) {
+            $this->assertFalse(self::hasOptionalMethod($builder, 'makeUnsealed'));
+            return;
+        }
+
+        $keyTypes = [];
+        $valueTypes = [];
+
+        for ($i = 0; $i <= 256; $i++) {
+            $keyTypes[] = new ConstantStringType('key' . $i);
+            $valueTypes[] = new ConstantIntegerType($i);
+        }
+
+        $operand = new ConstantArrayType(
+            $keyTypes,
+            $valueTypes,
+            [0],
+            [],
+            TrinaryLogic::createMaybe(),
+            [new ConstantStringType('7'), new StringType()],
+        );
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertTrue(
+            $result->getIterableKeyType()->isSuperTypeOf(new ConstantIntegerType(0))->yes(),
+        );
+    }
+
+    public function testDegradedUnsealedIntegerArrayRemainsList(): void
+    {
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+
+        if (!self::hasOptionalMethod($builder, 'makeUnsealed')) {
+            $this->assertFalse(self::hasOptionalMethod($builder, 'makeUnsealed'));
+            return;
+        }
+
+        $keyTypes = [new ConstantStringType('7')];
+        $valueTypes = [new ConstantStringType('numeric')];
+
+        for ($i = 0; $i < 256; $i++) {
+            $keyTypes[] = new ConstantIntegerType(1000 + $i);
+            $valueTypes[] = new ConstantIntegerType($i);
+        }
+
+        $operand = new ConstantArrayType(
+            $keyTypes,
+            $valueTypes,
+            [1256],
+            [],
+            TrinaryLogic::createMaybe(),
+            [new IntegerType(), new IntegerType()],
+        );
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertTrue($result->isList()->yes());
+    }
+
+    public function testUnsealedDecimalIntegerStringKeysAreReindexedAsAList(): void
+    {
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+
+        if (!self::hasOptionalMethod($builder, 'makeUnsealed')) {
+            $this->assertFalse(self::hasOptionalMethod($builder, 'makeUnsealed'));
+            return;
+        }
+
+        if (!class_exists(AccessoryDecimalIntegerStringType::class)) {
+            $this->assertFalse(class_exists(AccessoryDecimalIntegerStringType::class));
+            return;
+        }
+
+        $builder->setOffsetValueType(new ConstantIntegerType(1000), new StringType());
+        $builder->makeUnsealed(
+            new IntersectionType([
+                new StringType(),
+                new AccessoryDecimalIntegerStringType(),
+            ]),
+            new BooleanType(),
+        );
+
+        $result = (new ArrayMergeType([$builder->getArray()]))->resolve();
+
+        $this->assertTrue($result->isList()->yes());
+        $this->assertTrue($result->isIterableAtLeastOnce()->yes());
+        $this->assertTrue($result->getIterableValueType()->isSuperTypeOf(new StringType())->yes());
+        $this->assertTrue($result->getIterableValueType()->isSuperTypeOf(new BooleanType())->yes());
+    }
+
+    public function testSmallUnsealedArrayPreservesExtraOffsets(): void
+    {
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+
+        if (!self::hasOptionalMethod($builder, 'makeUnsealed')) {
+            $this->assertFalse(self::hasOptionalMethod($builder, 'makeUnsealed'));
+            return;
+        }
+
+        $operand = new ConstantArrayType(
+            [new ConstantStringType('kept')],
+            [new IntegerType()],
+            [0],
+            [],
+            TrinaryLogic::createNo(),
+            [new StringType(), new BooleanType()],
+        );
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertTrue($result->getIterableKeyType()->isSuperTypeOf(new StringType())->yes());
+        $this->assertTrue($result->getIterableValueType()->isSuperTypeOf(new BooleanType())->yes());
+        $this->assertTrue($result->isIterableAtLeastOnce()->yes());
+    }
+
+    public function testResolveFallsBackWhenLargeOperandNormalizationDegrades(): void
+    {
+        $keyTypes = [];
+        $valueTypes = [];
+
+        for ($i = 0; $i <= 256; $i++) {
+            $keyTypes[] = new ConstantStringType('key' . $i);
+            $valueTypes[] = new ConstantIntegerType($i);
+        }
+
+        $firstOperand = new ConstantArrayType($keyTypes, $valueTypes);
+        $secondOperand = new ConstantArrayType(
+            [new ConstantStringType('extra')],
+            [new ConstantIntegerType(999)],
+        );
+        $runtimeResult = new ConstantArrayType(
+            [...$keyTypes, new ConstantStringType('extra')],
+            [...$valueTypes, new ConstantIntegerType(999)],
+        );
+
+        $result = (new ArrayMergeType([$firstOperand, $secondOperand]))->resolve();
+
+        $this->assertTrue($result->isSuperTypeOf($runtimeResult)->yes());
+        $this->assertTrue(
+            $result->getIterableKeyType()->isSuperTypeOf(new ConstantStringType('key0'))->yes(),
+        );
+        $this->assertTrue(
+            $result->getIterableValueType()->isSuperTypeOf(new ConstantIntegerType(0))->yes(),
+        );
+        $this->assertTrue($result->isIterableAtLeastOnce()->yes());
+    }
+
+    public function testResolveFallsBackWhenConstantUnionGeneralizes(): void
+    {
+        $leftKeyTypes = [];
+        $rightKeyTypes = [];
+        $leftValueTypes = [];
+        $rightValueTypes = [];
+
+        for ($i = 0; $i < 32; $i++) {
+            $leftKeyTypes[] = new ConstantStringType('left' . $i);
+            $rightKeyTypes[] = new ConstantStringType('right' . $i);
+            $leftValueTypes[] = new ConstantIntegerType($i);
+            $rightValueTypes[] = new ConstantIntegerType(100 + $i);
+        }
+
+        $leftRuntimeResult = new ConstantArrayType($leftKeyTypes, $leftValueTypes);
+        $rightRuntimeResult = new ConstantArrayType($rightKeyTypes, $rightValueTypes);
+        $operand = new UnionType([$leftRuntimeResult, $rightRuntimeResult]);
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertTrue($result->isSuperTypeOf($leftRuntimeResult)->yes());
+        $this->assertTrue($result->isSuperTypeOf($rightRuntimeResult)->yes());
+        $this->assertTrue($result->isIterableAtLeastOnce()->yes());
     }
 
     public function testOptionalNeverPruningPreservesNondefaultNextAutoIndex(): void

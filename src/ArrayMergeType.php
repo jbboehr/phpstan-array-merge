@@ -220,24 +220,43 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         if ($nConstantArrays === count($types)) {
-            $builder = ConstantArrayTypeBuilder::createEmpty();
+            $normalizedTypes = [];
+            $allNormalizedTypesConstant = true;
 
             foreach ($types as $type) {
-                $type = self::normalizeConstantArrayIntegerKeys($type);
-                if (null === $type) {
+                $normalizedType = self::normalizeConstantArrayIntegerKeys($type);
+                if (null === $normalizedType) {
                     return new MixedType();
                 }
 
-                foreach (self::getConstantArrayKeyTypes($type) as $keyType) {
-                    $builder->setOffsetValueType(
-                        $keyType instanceof ConstantIntegerType ? null : $keyType,
-                        $type->getOffsetValueType($keyType),
-                        !$type->hasOffsetValueType($keyType)->yes(),
-                    );
+                $normalizedTypes[] = $normalizedType;
+                if (!$normalizedType->isConstantArray()->yes()) {
+                    $allNormalizedTypesConstant = false;
+                }
+
+                foreach ($type->getConstantArrays() as $constantArrayType) {
+                    if (self::hasUnknownExtraOffsets($constantArrayType)) {
+                        $allNormalizedTypesConstant = false;
+                        break;
+                    }
                 }
             }
 
-            return $builder->getArray();
+            if ($allNormalizedTypesConstant) {
+                $builder = ConstantArrayTypeBuilder::createEmpty();
+
+                foreach ($normalizedTypes as $normalizedType) {
+                    foreach (self::getConstantArrayKeyTypes($normalizedType) as $keyType) {
+                        $builder->setOffsetValueType(
+                            $keyType instanceof ConstantIntegerType ? null : $keyType,
+                            $normalizedType->getOffsetValueType($keyType),
+                            !$normalizedType->hasOffsetValueType($keyType)->yes(),
+                        );
+                    }
+                }
+
+                return $builder->getArray();
+            }
         }
 
         if ($nConstantArrays + $nOtherArrays === count($types)) {
@@ -251,7 +270,22 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 $arrayItemTypes = [];
 
                 foreach ($type->getArrays() as $arrayType) {
-                    $arrayKeyTypes[] = $arrayType->getKeyType();
+                    $normalizedArrayType = self::normalizeConstantArrayIntegerKeys($arrayType);
+
+                    if (null === $normalizedArrayType) {
+                        $arrayKeyTypes[] = self::normalizeArrayMergeKeyType($arrayType->getKeyType());
+                    } else {
+                        $arrayKeyTypes[] = $normalizedArrayType->getIterableKeyType();
+
+                        $constantArrays = $arrayType->getConstantArrays();
+                        if (count($constantArrays) === 1) {
+                            $unsealedTypes = self::getUnsealedTypes($constantArrays[0]);
+                            if (null !== $unsealedTypes) {
+                                $arrayKeyTypes[] = self::normalizeArrayMergeKeyType($unsealedTypes[0]);
+                            }
+                        }
+                    }
+
                     $arrayItemTypes[] = $arrayType->getItemType();
                 }
 
@@ -295,6 +329,11 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return new ArrayType(new MixedType(true), new MixedType(true));
+    }
+
+    private static function normalizeArrayMergeKeyType(Type $keyType): Type
+    {
+        return $keyType instanceof MixedType ? $keyType : $keyType->toArrayKey();
     }
 
     private static function removeUninhabitedConstantArrays(Type $type): Type
