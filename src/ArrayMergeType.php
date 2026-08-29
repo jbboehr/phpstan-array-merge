@@ -26,12 +26,14 @@ use PHPStan\PhpDocParser\Ast\Type\TypeNode;
 use PHPStan\Type\Accessory\AccessoryArrayListType;
 use PHPStan\Type\Accessory\NonEmptyArrayType;
 use PHPStan\Type\ArrayType;
+use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\CompoundType;
 use PHPStan\Type\Constant\ConstantArrayType;
 use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
 use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\Constant\ConstantStringType;
 use PHPStan\Type\ErrorType;
+use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Generic\TemplateTypeVariance;
 use PHPStan\Type\IntegerRangeType;
 use PHPStan\Type\IntegerType;
@@ -44,6 +46,7 @@ use PHPStan\Type\Type;
 use PHPStan\Type\TypeCombinator;
 use PHPStan\Type\TypeTraverser;
 use PHPStan\Type\TypeUtils;
+use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
 use function is_callable;
 use function sprintf;
@@ -143,10 +146,10 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         $nOtherArrays = 0;
         $hasUninhabitedArray = false;
         $types = [];
-        $arrayConstraint = new ArrayType(new MixedType(true), new MixedType(true));
 
         foreach ($this->types as $type) {
             $type = self::removeUninhabitedConstantArrays($type);
+            $type = self::removeTopLevelNeverAlternatives($type);
 
             if ($type instanceof NeverType) {
                 $hasUninhabitedArray = true;
@@ -156,12 +159,8 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
             $isArray = $type->isArray();
 
-            if ($isArray->no()) {
-                return new ErrorType();
-            }
-
             if (!$isArray->yes()) {
-                $type = TypeCombinator::intersect($type, $arrayConstraint);
+                return new ErrorType();
             }
 
             if (
@@ -329,6 +328,35 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return new ArrayType(new MixedType(true), new MixedType(true));
+    }
+
+    private static function removeTopLevelNeverAlternatives(Type $type): Type
+    {
+        if (!($type instanceof UnionType) || $type instanceof TemplateType) {
+            return $type;
+        }
+
+        $innerTypes = $type->getTypes();
+        $types = array_values(array_filter(
+            $innerTypes,
+            static fn(Type $innerType): bool => !($innerType instanceof NeverType),
+        ));
+
+        if (count($types) === count($innerTypes)) {
+            return $type;
+        }
+
+        if ([] === $types) {
+            return $innerTypes[0];
+        }
+
+        if (count($types) === 1) {
+            return $types[0];
+        }
+
+        return $type instanceof BenevolentUnionType
+            ? new BenevolentUnionType($types)
+            : new UnionType($types);
     }
 
     private static function normalizeArrayMergeKeyType(Type $keyType): Type

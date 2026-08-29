@@ -48,6 +48,15 @@ class ConstFixture
 }
 ```
 
+Each `array-merge` type argument must be statically known to be an array. Bind
+templates to an array type, as in `@template T of array<mixed>` above. Unknown
+operands such as `mixed`, and unions that include a non-array type such as
+`array<int, string>|int`, are errors instead of silently discarding non-array
+possibilities. In direct type contexts they resolve to `*ERROR*`; in PHPDoc
+declarations PHPStan reports the invalid declaration and may use its native type
+as a fallback at downstream call sites. This is an intentional pre-1.0
+tightening of the operand contract.
+
 ```php
 <?php
 

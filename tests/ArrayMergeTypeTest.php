@@ -26,7 +26,9 @@ use PHPStan\PhpDocParser\Printer\Printer;
 use PHPStan\Testing\PHPStanTestCase;
 use PHPStan\TrinaryLogic;
 use PHPStan\Type\Accessory\AccessoryDecimalIntegerStringType;
+use PHPStan\Type\Accessory\NonEmptyArrayType;
 use PHPStan\Type\ArrayType;
+use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\BooleanType;
 use PHPStan\Type\ClosureType;
 use PHPStan\Type\Constant\ConstantArrayType;
@@ -138,16 +140,47 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         $this->assertSame('array<stdClass|Throwable>', $type->resolve()->describe(VerbosityLevel::precise()));
     }
 
-    public function testResolvePreservesExplicitMixedForMaybeArrayOperand(): void
+    public function testResolveRejectsOperandsThatAreNotDefinitelyArrays(): void
     {
-        $result = (new ArrayMergeType([new MixedType(true)]))->resolve();
-        $arrays = $result->getArrays();
+        $this->assertInstanceOf(
+            ErrorType::class,
+            (new ArrayMergeType([new MixedType(true)]))->resolve(),
+        );
+        $this->assertInstanceOf(
+            ErrorType::class,
+            (new ArrayMergeType([
+                new UnionType([
+                    new ArrayType(new IntegerType(), new StringType()),
+                    new StringType(),
+                ]),
+            ]))->resolve(),
+        );
+    }
 
-        $this->assertCount(1, $arrays);
-        $this->assertInstanceOf(MixedType::class, $arrays[0]->getKeyType());
-        $this->assertTrue($arrays[0]->getKeyType()->isExplicitMixed());
-        $this->assertInstanceOf(MixedType::class, $arrays[0]->getItemType());
-        $this->assertTrue($arrays[0]->getItemType()->isExplicitMixed());
+    public function testResolveRejectsBenevolentUnionWithNonArrayAlternative(): void
+    {
+        $operand = new BenevolentUnionType([
+            new ArrayType(new IntegerType(), new StringType()),
+            new StringType(),
+        ]);
+
+        $this->assertTrue($operand->isArray()->maybe());
+        $this->assertInstanceOf(ErrorType::class, (new ArrayMergeType([$operand]))->resolve());
+    }
+
+    public function testResolvePreservesBenevolentUnionWhenRemovingNeverAlternative(): void
+    {
+        $possiblyEmpty = new ArrayType(new StringType(), new IntegerType());
+        $nonEmpty = new IntersectionType([$possiblyEmpty, new NonEmptyArrayType()]);
+        $withoutNever = (new ArrayMergeType([
+            new BenevolentUnionType([$possiblyEmpty, $nonEmpty]),
+        ]))->resolve();
+        $withNever = (new ArrayMergeType([
+            new BenevolentUnionType([$possiblyEmpty, $nonEmpty, new NeverType()]),
+        ]))->resolve();
+
+        $this->assertTrue($withoutNever->isIterableAtLeastOnce()->yes());
+        $this->assertTrue($withoutNever->equals($withNever));
     }
 
     public function testResolveUsesOverriddenResult(): void

@@ -26,7 +26,7 @@ assertType("*ERROR*", $impossibleShapeUnionThenInvalid);
 assertType("*ERROR*", $invalidThenImpossibleShapeUnion);
 
 /** @phpstan-var array-merge<array-key|array{a: int}> $unionValuedBranch */
-assertType("array{a: int}", $unionValuedBranch);
+assertType("*ERROR*", $unionValuedBranch);
 
 /** @phpstan-var array-merge<array{bad: never}|null> $invalidRemainderAfterPruning */
 assertType("*ERROR*", $invalidRemainderAfterPruning);
@@ -35,4 +35,4 @@ assertType("*ERROR*", $invalidRemainderAfterPruning);
 assertType("*ERROR*", $integerRemainderAfterPruning);
 
 /** @phpstan-var array-merge<mixed> $maybeArray */
-assertType("array<mixed, mixed>", $maybeArray);
+assertType("*ERROR*", $maybeArray);

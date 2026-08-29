@@ -28,20 +28,23 @@ assertType("array<int<0, max>|string, 'left'|'right'>", $unionedGenericArrays);
 /** @phpstan-var array-merge<array{}|array{a: int}, array<string, bool>> $possiblyEmptyUnion */
 assertType('array<string, bool|int>', $possiblyEmptyUnion);
 
+/** @phpstan-var array-merge<array{a: int}|never> $arrayWithNeverAlternative */
+assertType('array{a: int}', $arrayWithNeverAlternative);
+
 /** @phpstan-var array-merge<array<int, string>|int> $maybeList */
-assertType('list<string>', $maybeList);
+assertType('*ERROR*', $maybeList);
 
 /** @phpstan-var array-merge<array<string, int>|string> $maybeStringArray */
-assertType('array<string, int>', $maybeStringArray);
+assertType('*ERROR*', $maybeStringArray);
 
 /** @phpstan-var array-merge<array<never, string>|int> $maybeEmptyArray */
-assertType('array{}', $maybeEmptyArray);
+assertType('*ERROR*', $maybeEmptyArray);
 
 /** @phpstan-var array-merge<array<never, string>> $emptyArray */
 assertType('array{}', $emptyArray);
 
 /** @phpstan-var array-merge<array<string, never>|int> $maybeEmptyValueArray */
-assertType('array{}', $maybeEmptyValueArray);
+assertType('*ERROR*', $maybeEmptyValueArray);
 
 /** @phpstan-var array-merge<array<string, never>> $emptyValueArray */
 assertType('array{}', $emptyValueArray);
