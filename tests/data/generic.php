@@ -4,6 +4,7 @@ namespace jbboehr\PHPStan\ArrayMerge\Tests\Data;
 
 use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\genericMergeOne;
 use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\genericMergeUnionOperand;
+use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\genericMergeUnionOperandWithImpossibleShape;
 use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\identity;
 use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\sanity1;
 use function PHPStan\Testing\assertType;
@@ -20,3 +21,12 @@ assertType("array{a: 2}", genericMergeOne(['a' => 1], ['a' => 2]));
 /** @phpstan-var array{a: int} $templateUnionInput */
 $templateUnionInput = ['a' => 1];
 assertType("array{a?: int, c?: bool}", genericMergeUnionOperand($templateUnionInput));
+
+/**
+ * @template T of array{}|array{a: int}
+ * @param T $value
+ */
+function assertImpossibleShapeDoesNotEraseTemplateUnion(array $value): void
+{
+    assertType("array<string, int>", genericMergeUnionOperandWithImpossibleShape($value));
+}

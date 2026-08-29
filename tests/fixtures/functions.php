@@ -81,3 +81,13 @@ function genericMergeUnionOperand(array $value): array
 {
     return [];
 }
+
+/**
+ * @template T of array{}|array{a: int}
+ * @param T $value
+ * @phpstan-return array-merge<T|non-empty-array<string, int>|array{bad: never}>
+ */
+function genericMergeUnionOperandWithImpossibleShape(array $value): array
+{
+    return [];
+}

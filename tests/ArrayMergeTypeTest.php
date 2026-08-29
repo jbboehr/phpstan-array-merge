@@ -21,6 +21,7 @@ namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
 use Brick\VarExporter\VarExporter;
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
+use jbboehr\PHPStan\ArrayMerge\ArrayMergeTypeOperandUnionType;
 use PHPStan\PhpDoc\TypeStringResolver;
 use PHPStan\PhpDocParser\Printer\Printer;
 use PHPStan\Testing\PHPStanTestCase;
@@ -37,6 +38,7 @@ use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\Constant\ConstantStringType;
 use PHPStan\Type\ErrorType;
 use PHPStan\Type\Generic\TemplateType;
+use PHPStan\Type\Generic\TemplateTypeScope;
 use PHPStan\Type\Generic\TemplateTypeVariance;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\IntersectionType;
@@ -45,6 +47,7 @@ use PHPStan\Type\NeverType;
 use PHPStan\Type\ObjectType;
 use PHPStan\Type\StringType;
 use PHPStan\Type\Type;
+use PHPStan\Type\TypeCombinator;
 use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
 use function array_map;
@@ -755,6 +758,113 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         $this->assertInstanceOf(ArrayMergeType::class, $result);
         $this->assertNotSame($type, $result);
         $this->assertSame([$replacementType], $result->getTypes());
+    }
+
+    public function testOperandUnionTraversePreservesBenevolentReplacementSemantics(): void
+    {
+        $placeholder = new ArrayType(new MixedType(), new MixedType());
+        $benevolentReplacement = new BenevolentUnionType([
+            new ArrayType(new IntegerType(), new IntegerType()),
+            new ArrayType(new StringType(), new StringType()),
+        ]);
+        $type = new ArrayMergeTypeOperandUnionType([
+            $placeholder,
+            new NeverType(),
+        ]);
+
+        $result = $type->traverse(static fn(Type $innerType): Type => $innerType === $placeholder
+            ? $benevolentReplacement
+            : $innerType);
+
+        $this->assertInstanceOf(BenevolentUnionType::class, $result);
+        $this->assertTrue($result->accepts(
+            new ArrayType(new IntegerType(), new StringType()),
+            true,
+        )->no());
+    }
+
+    public function testOperandUnionTraversePreservesNestedTemplateUnion(): void
+    {
+        $emptyType = ConstantArrayTypeBuilder::createEmpty()->getArray();
+        $aBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $aBuilder->setOffsetValueType(new ConstantStringType('a'), new IntegerType());
+        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
+            ->invoke(null, __FUNCTION__);
+        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
+        $template = (new \ReflectionMethod('PHPStan\Type\Generic\TemplateTypeFactory', 'create'))->invoke(
+            null,
+            $scope,
+            'U',
+            new UnionType([$emptyType, $aBuilder->getArray()]),
+            TemplateTypeVariance::createInvariant(),
+        );
+        $this->assertInstanceOf(UnionType::class, $template);
+
+        $cBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $cBuilder->setOffsetValueType(new ConstantStringType('c'), new IntegerType());
+        $replacement = new UnionType([$template, $cBuilder->getArray()]);
+        $nonEmpty = new IntersectionType([
+            new ArrayType(new StringType(), new IntegerType()),
+            new NonEmptyArrayType(),
+        ]);
+        $impossibleBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $impossibleBuilder->setOffsetValueType(new ConstantStringType('bad'), new NeverType());
+        $placeholder = new ArrayType(new MixedType(), new MixedType());
+        $type = new ArrayMergeTypeOperandUnionType([
+            $placeholder,
+            $nonEmpty,
+            $impossibleBuilder->getArray(),
+        ]);
+
+        $result = $type->traverse(static fn(Type $innerType): Type => $innerType === $placeholder
+            ? $replacement
+            : $innerType);
+
+        $this->assertTrue($result->isIterableAtLeastOnce()->maybe());
+        $this->assertFalse((new ArrayMergeType([$result]))->isResolvable());
+    }
+
+    public function testOperandUnionTraverseRestoresNestedBenevolentUnionAfterTemplateResolution(): void
+    {
+        $emptyType = ConstantArrayTypeBuilder::createEmpty()->getArray();
+        $aBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $aBuilder->setOffsetValueType(new ConstantStringType('a'), new IntegerType());
+        $aType = $aBuilder->getArray();
+        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
+            ->invoke(null, __FUNCTION__);
+        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
+        $template = (new \ReflectionMethod('PHPStan\Type\Generic\TemplateTypeFactory', 'create'))->invoke(
+            null,
+            $scope,
+            'U',
+            new UnionType([$emptyType, $aType]),
+            TemplateTypeVariance::createInvariant(),
+        );
+        $this->assertInstanceOf(UnionType::class, $template);
+
+        $cBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $cBuilder->setOffsetValueType(new ConstantStringType('c'), new StringType());
+        $cType = $cBuilder->getArray();
+        $replacement = new BenevolentUnionType([$template, $cType]);
+        $placeholder = new ArrayType(new MixedType(), new MixedType());
+        $type = new ArrayMergeTypeOperandUnionType([$placeholder, $cType]);
+
+        $deferred = $type->traverse(static fn(Type $innerType): Type => $innerType === $placeholder
+            ? $replacement
+            : $innerType);
+        $result = $deferred->traverse(static fn(Type $innerType): Type => $innerType === $template
+            ? $aType
+            : $innerType);
+        $expected = TypeCombinator::union(
+            $replacement->traverse(static fn(Type $innerType): Type => $innerType === $template
+                ? $aType
+                : $innerType),
+            $cType,
+        );
+
+        $this->assertInstanceOf(BenevolentUnionType::class, $expected);
+        $this->assertInstanceOf(BenevolentUnionType::class, $result);
+        $this->assertTrue($expected->equals($result));
     }
 
     public function testTraverseReturnsOriginalWhenUnchanged(): void

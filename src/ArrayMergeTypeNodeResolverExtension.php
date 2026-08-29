@@ -94,6 +94,6 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
             }
         }
 
-        return new UnionType($types);
+        return new ArrayMergeTypeOperandUnionType($types);
     }
 }
