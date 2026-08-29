@@ -3,6 +3,7 @@
 namespace jbboehr\PHPStan\ArrayMerge\Tests\Data;
 
 use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\genericMergeOne;
+use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\genericMergeUnionOperand;
 use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\identity;
 use function jbboehr\PHPStan\ArrayMerge\Tests\Fixture\sanity1;
 use function PHPStan\Testing\assertType;
@@ -15,3 +16,7 @@ assertType("array{a: 1}", identity(['a' => 1]));
 assertType("array{a: 1, b: 2}", genericMergeOne(['a' => 1], ['b' => 2]));
 
 assertType("array{a: 2}", genericMergeOne(['a' => 1], ['a' => 2]));
+
+/** @phpstan-var array{a: int} $templateUnionInput */
+$templateUnionInput = ['a' => 1];
+assertType("array{a?: int, c?: bool}", genericMergeUnionOperand($templateUnionInput));

@@ -71,3 +71,13 @@ function nested(array $a, array $b, array $c): array
 {
     return [];
 }
+
+/**
+ * @template T of array{a: int}|array{b: string}
+ * @param T $value
+ * @phpstan-return array-merge<T|array{c: bool}>
+ */
+function genericMergeUnionOperand(array $value): array
+{
+    return [];
+}

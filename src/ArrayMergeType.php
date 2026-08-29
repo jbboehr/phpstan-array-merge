@@ -26,6 +26,7 @@ use PHPStan\Type\Accessory\AccessoryArrayListType;
 use PHPStan\Type\Accessory\NonEmptyArrayType;
 use PHPStan\Type\ArrayType;
 use PHPStan\Type\CompoundType;
+use PHPStan\Type\Constant\ConstantArrayType;
 use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
 use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\Constant\ConstantStringType;
@@ -40,6 +41,7 @@ use PHPStan\Type\Traits\LateResolvableTypeTrait;
 use PHPStan\Type\Traits\NonGeneralizableTypeTrait;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeCombinator;
+use PHPStan\Type\TypeTraverser;
 use PHPStan\Type\TypeUtils;
 use PHPStan\Type\VerbosityLevel;
 use function sprintf;
@@ -142,6 +144,14 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         $arrayConstraint = new ArrayType(new MixedType(true), new MixedType(true));
 
         foreach ($this->types as $type) {
+            $type = self::removeUninhabitedConstantArrays($type);
+
+            if ($type instanceof NeverType) {
+                $hasUninhabitedArray = true;
+                $types[] = $type;
+                continue;
+            }
+
             $isArray = $type->isArray();
 
             if ($isArray->no()) {
@@ -161,10 +171,6 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 } else {
                     $type = ConstantArrayTypeBuilder::createEmpty()->getArray();
                 }
-            }
-
-            if (self::containsOnlyUninhabitedConstantArrays($type)) {
-                $hasUninhabitedArray = true;
             }
 
             $types[] = $type;
@@ -258,34 +264,21 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         return new ArrayType(new MixedType(true), new MixedType(true));
     }
 
-    private static function containsOnlyUninhabitedConstantArrays(Type $type): bool
+    private static function removeUninhabitedConstantArrays(Type $type): Type
     {
-        if (!$type->isConstantArray()->yes()) {
-            return false;
-        }
+        return TypeTraverser::map($type, static function (Type $innerType, callable $traverse): Type {
+            $innerType = $traverse($innerType);
 
-        $constantArrayTypes = $type->getConstantArrays();
-
-        if ([] === $constantArrayTypes) {
-            return false;
-        }
-
-        foreach ($constantArrayTypes as $constantArrayType) {
-            $isUninhabited = false;
-
-            foreach ($constantArrayType->getValueTypes() as $i => $valueType) {
-                if (!$constantArrayType->isOptionalKey($i) && $valueType instanceof NeverType) {
-                    $isUninhabited = true;
-                    break;
+            if ($innerType instanceof ConstantArrayType) {
+                foreach ($innerType->getValueTypes() as $i => $valueType) {
+                    if (!$innerType->isOptionalKey($i) && $valueType instanceof NeverType) {
+                        return new NeverType();
+                    }
                 }
             }
 
-            if (!$isUninhabited) {
-                return false;
-            }
-        }
-
-        return true;
+            return $innerType;
+        });
     }
 
     private static function normalizeConstantArrayIntegerKeys(Type $type): ?Type

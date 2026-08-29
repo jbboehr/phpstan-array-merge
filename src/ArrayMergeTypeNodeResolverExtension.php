@@ -25,7 +25,10 @@ use PHPStan\PhpDoc\TypeNodeResolverAwareExtension;
 use PHPStan\PhpDoc\TypeNodeResolverExtension;
 use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\TypeNode;
+use PHPStan\PhpDocParser\Ast\Type\UnionTypeNode;
+use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Type;
+use PHPStan\Type\UnionType;
 
 final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExtension, TypeNodeResolverAwareExtension
 {
@@ -52,7 +55,7 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
             $types = [];
 
             foreach ($typeNode->genericTypes as $genericTypeNode) {
-                $type = $this->typeNodeResolver->resolve($genericTypeNode, $nameScope);
+                $type = $this->resolveOperandType($genericTypeNode, $nameScope);
 
                 if ($type instanceof ArrayMergeType) {
                     foreach ($type->getTypes() as $childType) {
@@ -67,5 +70,30 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
         } catch (\Throwable $e) {
             ShouldNotHappenException::rethrow($e);
         }
+    }
+
+    private function resolveOperandType(TypeNode $typeNode, NameScope $nameScope): Type
+    {
+        if (!$typeNode instanceof UnionTypeNode) {
+            return $this->typeNodeResolver->resolve($typeNode, $nameScope);
+        }
+
+        $types = [];
+
+        // Keep union branches separate so required never offsets remain visible,
+        // but flatten non-template unions because UnionType rejects those when nested.
+        foreach ($typeNode->types as $innerTypeNode) {
+            $innerType = $this->typeNodeResolver->resolve($innerTypeNode, $nameScope);
+
+            if ($innerType instanceof UnionType && !($innerType instanceof TemplateType)) {
+                foreach ($innerType->getTypes() as $nestedType) {
+                    $types[] = $nestedType;
+                }
+            } else {
+                $types[] = $innerType;
+            }
+        }
+
+        return new UnionType($types);
     }
 }
