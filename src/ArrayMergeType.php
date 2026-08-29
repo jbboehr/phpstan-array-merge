@@ -19,6 +19,7 @@ declare(strict_types=1);
 
 namespace jbboehr\PHPStan\ArrayMerge;
 
+use Closure;
 use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\TypeNode;
@@ -44,6 +45,7 @@ use PHPStan\Type\TypeCombinator;
 use PHPStan\Type\TypeTraverser;
 use PHPStan\Type\TypeUtils;
 use PHPStan\Type\VerbosityLevel;
+use function is_callable;
 use function sprintf;
 
 /**
@@ -275,10 +277,117 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                         return new NeverType();
                     }
                 }
+
+                if (self::hasUnknownExtraOffsets($innerType)) {
+                    return $innerType;
+                }
+
+                if ([0] !== $innerType->getNextAutoIndexes()) {
+                    return $innerType;
+                }
+
+                $builder = self::createNonDegradingConstantArrayBuilder();
+                $changed = false;
+
+                foreach ($innerType->getKeyTypes() as $i => $keyType) {
+                    if ($keyType instanceof ConstantIntegerType) {
+                        return $innerType;
+                    }
+
+                    $valueType = $innerType->getValueTypes()[$i];
+                    if ($innerType->isOptionalKey($i) && $valueType instanceof NeverType) {
+                        $changed = true;
+                        continue;
+                    }
+
+                    $builder->setOffsetValueType(
+                        $keyType,
+                        $valueType,
+                        $innerType->isOptionalKey($i),
+                    );
+                }
+
+                if ($changed) {
+                    self::restoreUnsealedTypes($innerType, $builder);
+                    return $builder->getArray();
+                }
             }
 
             return $innerType;
         });
+    }
+
+    private static function getOptionalMethod(object $object, string $method): ?Closure
+    {
+        $callable = [$object, $method];
+
+        if (!is_callable($callable)) {
+            return null;
+        }
+
+        return Closure::fromCallable($callable);
+    }
+
+    private static function createNonDegradingConstantArrayBuilder(): ConstantArrayTypeBuilder
+    {
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+        $disableArrayDegradation = self::getOptionalMethod($builder, 'disableArrayDegradation');
+
+        if (null !== $disableArrayDegradation) {
+            $disableArrayDegradation();
+        }
+
+        return $builder;
+    }
+
+    /**
+     * @return array{Type, Type}|null
+     */
+    private static function getUnsealedTypes(ConstantArrayType $type): ?array
+    {
+        $getUnsealedTypes = self::getOptionalMethod($type, 'getUnsealedTypes');
+
+        if (null === $getUnsealedTypes) {
+            return null;
+        }
+
+        $unsealedTypes = $getUnsealedTypes();
+
+        if (
+            !is_array($unsealedTypes)
+            || count($unsealedTypes) !== 2
+            || !$unsealedTypes[0] instanceof Type
+            || !$unsealedTypes[1] instanceof Type
+        ) {
+            return null;
+        }
+
+        return [$unsealedTypes[0], $unsealedTypes[1]];
+    }
+
+    private static function restoreUnsealedTypes(
+        ConstantArrayType $type,
+        ConstantArrayTypeBuilder $builder,
+    ): void {
+        $unsealedTypes = self::getUnsealedTypes($type);
+        $makeUnsealed = self::getOptionalMethod($builder, 'makeUnsealed');
+
+        if (null === $unsealedTypes || null === $makeUnsealed) {
+            return;
+        }
+
+        $makeUnsealed($unsealedTypes[0], $unsealedTypes[1]);
+    }
+
+    private static function hasUnknownExtraOffsets(ConstantArrayType $type): bool
+    {
+        $unsealedTypes = self::getUnsealedTypes($type);
+
+        if (null === $unsealedTypes) {
+            return false;
+        }
+
+        return !($unsealedTypes[0] instanceof NeverType && $unsealedTypes[0]->isExplicit());
     }
 
     private static function normalizeConstantArrayIntegerKeys(Type $type): ?Type

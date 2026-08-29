@@ -68,7 +68,31 @@ assertType('array{first?: int, second?: string}', $impossibleAmongMultipleSurviv
 assertType('*NEVER*', $allImpossibleShapesThenTail);
 
 /** @phpstan-var array-merge<array{optional?: never, kept: int}|array{other: string}> $optionalNeverAmongSurvivors */
-assertType('array{optional?: never, kept?: int, other?: string}', $optionalNeverAmongSurvivors);
+assertType('array{kept?: int, other?: string}', $optionalNeverAmongSurvivors);
+
+/** @phpstan-var array-merge<array{optional?: never, kept: int}> $optionalNeverWithRequiredOffset */
+assertType('array{kept: int}', $optionalNeverWithRequiredOffset);
+
+/** @phpstan-var array-merge<array{removed?: never, kept?: int}> $optionalNeverWithOptionalOffset */
+assertType('array{kept?: int}', $optionalNeverWithOptionalOffset);
+
+/** @phpstan-var array-merge<array{outer: array{optional?: never, kept: int}}, array{tail: string}> $nestedOptionalNever */
+assertType('array{outer: array{kept: int}, tail: string}', $nestedOptionalNever);
+
+/** @phpstan-var array-merge<array{removed?: array{required: never}, kept: int}> $optionalNormalizedNever */
+assertType('array{kept: int}', $optionalNormalizedNever);
+
+/** @phpstan-var array-merge<array{0: string, removed?: never, kept: int}> $optionalNeverWithIntegerKey */
+assertType('array{0: string, removed?: never, kept: int}', $optionalNeverWithIntegerKey);
+
+/** @phpstan-var array-merge<array{0: string, removed?: array{required: never}, kept: int}> $normalizedOptionalNeverWithIntegerKey */
+assertType('array{0: string, removed?: *NEVER*, kept: int}', $normalizedOptionalNeverWithIntegerKey);
+
+/** @phpstan-var array-merge<array{0: string, bad: never, ...<string, bool>}> $requiredNeverWithExcludedShapeKinds */
+assertType('*NEVER*', $requiredNeverWithExcludedShapeKinds);
+
+/** @phpstan-var array-merge<array{outer: array{removed?: never, kept: int, ...<string, bool>}}> $nestedUnsealedShape */
+assertType('array{outer: array{removed?: never, kept: int, ...<string, bool>}}', $nestedUnsealedShape);
 
 /** @phpstan-var array-merge<array{bad: never}|array<int, string>> $impossibleShapeOrGenericList */
 assertType('list<string>', $impossibleShapeOrGenericList);

@@ -35,6 +35,7 @@ use PHPStan\Type\MixedType;
 use PHPStan\Type\Type;
 use PHPStan\Type\VerbosityLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
+use function is_callable;
 use function str_contains;
 use function str_replace;
 use function str_starts_with;
@@ -116,6 +117,13 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
      */
     private static function expectedTypeForPhpStanRenderer(string $expectedType): string
     {
+        if (
+            'array{outer: array{removed?: never, kept: int, ...<string, bool>}}' === $expectedType
+            && !self::hasOptionalMethod(ConstantArrayTypeBuilder::createEmpty(), 'makeUnsealed')
+        ) {
+            return 'array{outer: array{kept: int}}';
+        }
+
         if (str_starts_with($expectedType, 'list{') && self::usesArrayKeywordForListShapes()) {
             $expectedType = 'array{' . substr($expectedType, 5);
         }
@@ -130,6 +138,11 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
                 : $expectedType,
             default => $expectedType,
         };
+    }
+
+    private static function hasOptionalMethod(object $object, string $method): bool
+    {
+        return is_callable([$object, $method]);
     }
 
     private static function usesImplicitMixedArrayDescription(): bool
