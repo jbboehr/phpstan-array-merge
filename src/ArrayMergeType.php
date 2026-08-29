@@ -188,6 +188,37 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             return new NeverType();
         }
 
+        if (count($types) === 1) {
+            $constantArrays = $types[0]->getConstantArrays();
+
+            if (count($constantArrays) === 1 && $types[0]->equals($constantArrays[0])) {
+                $constantArray = $constantArrays[0];
+                $allStringKeys = true;
+
+                foreach ($constantArray->getKeyTypes() as $keyType) {
+                    $constantStrings = $keyType->getConstantStrings();
+                    $stringKey = count($constantStrings) === 1 ? $constantStrings[0]->getValue() : null;
+
+                    if (
+                        null === $stringKey
+                        || !$keyType->equals($constantStrings[0])
+                        || (string) (int) $stringKey === $stringKey
+                    ) {
+                        $allStringKeys = false;
+                        break;
+                    }
+                }
+
+                if (
+                    $allStringKeys
+                    && [0] === $constantArray->getNextAutoIndexes()
+                    && !self::hasUnknownExtraOffsets($constantArray)
+                ) {
+                    return $constantArray;
+                }
+            }
+        }
+
         if ($nConstantArrays === count($types)) {
             $builder = ConstantArrayTypeBuilder::createEmpty();
 
@@ -272,10 +303,20 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             $innerType = $traverse($innerType);
 
             if ($innerType instanceof ConstantArrayType) {
+                $hasOptionalNever = false;
+
                 foreach ($innerType->getValueTypes() as $i => $valueType) {
-                    if (!$innerType->isOptionalKey($i) && $valueType instanceof NeverType) {
-                        return new NeverType();
+                    if ($valueType instanceof NeverType) {
+                        if (!$innerType->isOptionalKey($i)) {
+                            return new NeverType();
+                        }
+
+                        $hasOptionalNever = true;
                     }
+                }
+
+                if (!$hasOptionalNever) {
+                    return $innerType;
                 }
 
                 if (self::hasUnknownExtraOffsets($innerType)) {
@@ -286,17 +327,17 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                     return $innerType;
                 }
 
-                $builder = self::createNonDegradingConstantArrayBuilder();
-                $changed = false;
-
-                foreach ($innerType->getKeyTypes() as $i => $keyType) {
+                foreach ($innerType->getKeyTypes() as $keyType) {
                     if ($keyType instanceof ConstantIntegerType) {
                         return $innerType;
                     }
+                }
 
+                $builder = self::createNonDegradingConstantArrayBuilder();
+
+                foreach ($innerType->getKeyTypes() as $i => $keyType) {
                     $valueType = $innerType->getValueTypes()[$i];
                     if ($innerType->isOptionalKey($i) && $valueType instanceof NeverType) {
-                        $changed = true;
                         continue;
                     }
 
@@ -307,10 +348,8 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                     );
                 }
 
-                if ($changed) {
-                    self::restoreUnsealedTypes($innerType, $builder);
-                    return $builder->getArray();
-                }
+                self::restoreUnsealedTypes($innerType, $builder);
+                return $builder->getArray();
             }
 
             return $innerType;

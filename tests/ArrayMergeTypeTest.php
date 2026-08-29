@@ -157,6 +157,73 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         $this->assertInstanceOf(StringType::class, $type->resolve());
     }
 
+    public function testResolvePreservesLargeTopLevelConstantShape(): void
+    {
+        $keyTypes = [];
+        $valueTypes = [];
+
+        for ($i = 0; $i <= 256; $i++) {
+            $keyTypes[] = new ConstantStringType('key' . $i);
+            $valueTypes[] = new ConstantIntegerType($i);
+        }
+
+        $operand = new ConstantArrayType($keyTypes, $valueTypes, [0], [0, 128, 256]);
+        $this->assertCount(257, $operand->getKeyTypes());
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertInstanceOf(ConstantArrayType::class, $result);
+        $this->assertTrue($operand->equals($result));
+        $this->assertTrue($result->hasOffsetValueType(new ConstantStringType('key0'))->maybe());
+        $this->assertTrue($result->hasOffsetValueType(new ConstantStringType('key1'))->yes());
+        $this->assertTrue($result->hasOffsetValueType(new ConstantStringType('key256'))->maybe());
+        $this->assertTrue(
+            (new ConstantIntegerType(128))->equals(
+                $result->getOffsetValueType(new ConstantStringType('key128')),
+            ),
+        );
+    }
+
+    public function testResolvePreservesTopLevelClosureShape(): void
+    {
+        $closureType = self::getContainer()->getByType(TypeStringResolver::class)->resolve('Closure(): int');
+        $this->assertInstanceOf(ClosureType::class, $closureType);
+        $keyTypes = [];
+        $valueTypes = [];
+
+        for ($i = 0; $i < 32; $i++) {
+            $keyTypes[] = new ConstantStringType('callback' . $i);
+            $valueTypes[] = $closureType;
+        }
+
+        $operand = new ConstantArrayType($keyTypes, $valueTypes, [0], [31]);
+        $this->assertCount(32, $operand->getKeyTypes());
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertInstanceOf(ConstantArrayType::class, $result);
+        $this->assertTrue($operand->equals($result));
+        $this->assertTrue($result->hasOffsetValueType(new ConstantStringType('callback0'))->yes());
+        $this->assertTrue($result->hasOffsetValueType(new ConstantStringType('callback31'))->maybe());
+        $this->assertTrue($closureType->equals(
+            $result->getOffsetValueType(new ConstantStringType('callback31')),
+        ));
+    }
+
+    public function testResolveReindexesCanonicalIntegerStringKey(): void
+    {
+        $operand = new ConstantArrayType(
+            [new ConstantStringType('7')],
+            [new ConstantStringType('value')],
+        );
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+
+        $this->assertInstanceOf(ConstantArrayType::class, $result);
+        $this->assertCount(1, $result->getKeyTypes());
+        $this->assertTrue((new ConstantIntegerType(0))->equals($result->getKeyTypes()[0]));
+    }
+
     public function testOptionalNeverPruningPreservesNondefaultNextAutoIndex(): void
     {
         $historyBuilder = ConstantArrayTypeBuilder::createEmpty();
