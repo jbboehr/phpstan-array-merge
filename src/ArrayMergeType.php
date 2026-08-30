@@ -23,6 +23,7 @@ use Closure;
 use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\TypeNode;
+use PHPStan\TrinaryLogic;
 use PHPStan\Type\Accessory\AccessoryArrayListType;
 use PHPStan\Type\Accessory\NonEmptyArrayType;
 use PHPStan\Type\ArrayType;
@@ -48,6 +49,7 @@ use PHPStan\Type\TypeTraverser;
 use PHPStan\Type\TypeUtils;
 use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
+use function array_fill_keys;
 use function is_callable;
 use function sprintf;
 
@@ -371,15 +373,32 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
             if ($innerType instanceof ConstantArrayType) {
                 $hasOptionalNever = false;
+                $hasIntegerKey = false;
+                $keyTypes = [];
+                $valueTypes = [];
+                $optionalKeys = [];
+                $optionalKeyLookup = array_fill_keys($innerType->getOptionalKeys(), true);
 
-                foreach ($innerType->getValueTypes() as $i => $valueType) {
+                foreach ($innerType->getKeyTypes() as $i => $keyType) {
+                    $valueType = $innerType->getValueTypes()[$i];
+                    $hasIntegerKey = $hasIntegerKey || $keyType instanceof ConstantIntegerType;
+                    $isOptionalKey = isset($optionalKeyLookup[$i]);
+
                     if ($valueType instanceof NeverType) {
-                        if (!$innerType->isOptionalKey($i)) {
+                        if (!$isOptionalKey) {
                             return new NeverType();
                         }
 
                         $hasOptionalNever = true;
+                        continue;
                     }
+
+                    if ($isOptionalKey) {
+                        $optionalKeys[] = count($keyTypes);
+                    }
+
+                    $keyTypes[] = $keyType;
+                    $valueTypes[] = $valueType;
                 }
 
                 if (!$hasOptionalNever) {
@@ -394,29 +413,18 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                     return $innerType;
                 }
 
-                foreach ($innerType->getKeyTypes() as $keyType) {
-                    if ($keyType instanceof ConstantIntegerType) {
-                        return $innerType;
-                    }
+                if ($hasIntegerKey) {
+                    return $innerType;
                 }
 
-                $builder = self::createNonDegradingConstantArrayBuilder();
-
-                foreach ($innerType->getKeyTypes() as $i => $keyType) {
-                    $valueType = $innerType->getValueTypes()[$i];
-                    if ($innerType->isOptionalKey($i) && $valueType instanceof NeverType) {
-                        continue;
-                    }
-
-                    $builder->setOffsetValueType(
-                        $keyType,
-                        $valueType,
-                        $innerType->isOptionalKey($i),
-                    );
-                }
-
-                self::restoreUnsealedTypes($innerType, $builder);
-                return $builder->getArray();
+                return new ConstantArrayType(
+                    $keyTypes,
+                    $valueTypes,
+                    $innerType->getNextAutoIndexes(),
+                    $optionalKeys,
+                    [] === $keyTypes ? TrinaryLogic::createYes() : $innerType->isList(),
+                    self::getUnsealedTypes($innerType),
+                );
             }
 
             return $innerType;
@@ -432,18 +440,6 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return Closure::fromCallable($callable);
-    }
-
-    private static function createNonDegradingConstantArrayBuilder(): ConstantArrayTypeBuilder
-    {
-        $builder = ConstantArrayTypeBuilder::createEmpty();
-        $disableArrayDegradation = self::getOptionalMethod($builder, 'disableArrayDegradation');
-
-        if (null !== $disableArrayDegradation) {
-            $disableArrayDegradation();
-        }
-
-        return $builder;
     }
 
     /**
@@ -469,20 +465,6 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return [$unsealedTypes[0], $unsealedTypes[1]];
-    }
-
-    private static function restoreUnsealedTypes(
-        ConstantArrayType $type,
-        ConstantArrayTypeBuilder $builder,
-    ): void {
-        $unsealedTypes = self::getUnsealedTypes($type);
-        $makeUnsealed = self::getOptionalMethod($builder, 'makeUnsealed');
-
-        if (null === $unsealedTypes || null === $makeUnsealed) {
-            return;
-        }
-
-        $makeUnsealed($unsealedTypes[0], $unsealedTypes[1]);
     }
 
     private static function hasUnknownExtraOffsets(ConstantArrayType $type): bool

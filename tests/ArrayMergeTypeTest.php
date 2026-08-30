@@ -51,6 +51,7 @@ use PHPStan\Type\TypeCombinator;
 use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
 use function array_map;
+use function hrtime;
 use function is_callable;
 use function spl_object_id;
 
@@ -578,22 +579,96 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         $this->assertSame([6], $resultInnerType->getNextAutoIndexes());
     }
 
-    public function testOptionalNeverPruningPreservesLargeConstantShape(): void
+    public function testOptionalNeverPruningRemovesCanonicalIntegerStringKey(): void
+    {
+        $innerType = new ConstantArrayType(
+            [new ConstantStringType('7')],
+            [new NeverType()],
+            [0],
+            [0],
+        );
+        $outerBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $outerBuilder->setOffsetValueType(new ConstantStringType('outer'), $innerType);
+
+        $result = (new ArrayMergeType([$outerBuilder->getArray()]))->resolve();
+        $resultInnerType = $result->getOffsetValueType(new ConstantStringType('outer'));
+
+        $this->assertInstanceOf(ConstantArrayType::class, $resultInnerType);
+        $this->assertSame([], $resultInnerType->getKeyTypes());
+        $this->assertTrue($resultInnerType->isList()->yes());
+    }
+
+    public function testOptionalNeverPruningPreservesSurvivingOptionalKey(): void
+    {
+        $keyTypes = [
+            new ConstantStringType('kept'),
+            new ConstantStringType('maybe'),
+            new ConstantStringType('ghost'),
+        ];
+        $valueTypes = [new IntegerType(), new StringType(), new NeverType()];
+        $innerType = new ConstantArrayType($keyTypes, $valueTypes, [0], [1, 2]);
+        $expectedInnerType = new ConstantArrayType(
+            [$keyTypes[0], $keyTypes[1]],
+            [$valueTypes[0], $valueTypes[1]],
+            [0],
+            [1],
+        );
+        $outerBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $outerBuilder->setOffsetValueType(new ConstantStringType('outer'), $innerType);
+
+        $result = (new ArrayMergeType([$outerBuilder->getArray()]))->resolve();
+        $resultInnerType = $result->getOffsetValueType(new ConstantStringType('outer'));
+
+        $this->assertInstanceOf(ConstantArrayType::class, $resultInnerType);
+        $this->assertTrue($expectedInnerType->equals($resultInnerType));
+    }
+
+    public function testOptionalNeverPruningScalesLinearly(): void
+    {
+        $measure = static function (int $size): float {
+            $keyTypes = [];
+            $valueTypes = [];
+            $optionalKeys = [];
+
+            for ($i = 0; $i < $size; $i++) {
+                $keyTypes[] = new ConstantStringType('ghost' . $i);
+                $valueTypes[] = new NeverType();
+                $optionalKeys[] = $i;
+            }
+
+            $innerType = new ConstantArrayType($keyTypes, $valueTypes, [0], $optionalKeys);
+            $outerType = new ConstantArrayType(
+                [new ConstantStringType('outer')],
+                [$innerType],
+            );
+
+            $start = hrtime(true);
+            $result = (new ArrayMergeType([$outerType]))->resolve();
+            $elapsed = hrtime(true) - $start;
+
+            $resultInnerType = $result->getOffsetValueType(new ConstantStringType('outer'));
+            self::assertInstanceOf(ConstantArrayType::class, $resultInnerType);
+            self::assertSame([], $resultInnerType->getKeyTypes());
+
+            return $elapsed / 1_000_000_000;
+        };
+
+        $measure(1_000);
+        $smallestDuration = min($measure(12_000), $measure(12_000), $measure(12_000));
+        $largestDuration = min($measure(36_000), $measure(36_000), $measure(36_000));
+
+        $this->assertLessThan(
+            $smallestDuration * 5.5,
+            $largestDuration,
+            'Tripling the number of offsets should not approach quadratic (9x) growth.',
+        );
+    }
+
+    public function testOptionalNeverPruningProducesDefiniteEmptyList(): void
     {
         $innerBuilder = ConstantArrayTypeBuilder::createEmpty();
-
-        if (!self::hasOptionalMethod($innerBuilder, 'disableArrayDegradation')) {
-            $this->assertFalse(self::hasOptionalMethod($innerBuilder, 'disableArrayDegradation'));
-            return;
-        }
-
-        $innerBuilder->disableArrayDegradation();
-
-        for ($i = 0; $i <= 256; $i++) {
-            $innerBuilder->setOffsetValueType(new ConstantStringType('key' . $i), new IntegerType());
-        }
-
         $innerBuilder->setOffsetValueType(new ConstantStringType('ghost'), new NeverType(), true);
+        $innerBuilder->setOffsetValueType(new ConstantStringType('phantom'), new NeverType(), true);
 
         $outerBuilder = ConstantArrayTypeBuilder::createEmpty();
         $outerBuilder->setOffsetValueType(new ConstantStringType('outer'), $innerBuilder->getArray());
@@ -602,36 +677,91 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         $resultInnerType = $result->getOffsetValueType(new ConstantStringType('outer'));
 
         $this->assertInstanceOf(ConstantArrayType::class, $resultInnerType);
+        $this->assertSame([], $resultInnerType->getKeyTypes());
+        $this->assertTrue($resultInnerType->isList()->yes());
+        $this->assertSame([0], $resultInnerType->getNextAutoIndexes());
+    }
+
+    public function testOptionalNeverPruningPreservesExplicitSealedMetadataForEmptyList(): void
+    {
+        $innerBuilder = ConstantArrayTypeBuilder::createEmpty();
+
+        if (!self::hasOptionalMethod($innerBuilder, 'makeUnsealed')) {
+            $this->assertFalse(self::hasOptionalMethod($innerBuilder, 'makeUnsealed'));
+            return;
+        }
+
+        $innerBuilder->setOffsetValueType(new ConstantStringType('ghost'), new NeverType(), true);
+        $innerBuilder->makeUnsealed(new NeverType(true), new NeverType(true));
+        $innerType = $innerBuilder->getArray();
+        $this->assertInstanceOf(ConstantArrayType::class, $innerType);
+        $this->assertTrue($innerType->isSealed()->yes());
+
+        $outerBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $outerBuilder->setOffsetValueType(new ConstantStringType('outer'), $innerType);
+
+        $result = (new ArrayMergeType([$outerBuilder->getArray()]))->resolve();
+        $resultInnerType = $result->getOffsetValueType(new ConstantStringType('outer'));
+
+        $this->assertInstanceOf(ConstantArrayType::class, $resultInnerType);
+        $this->assertSame([], $resultInnerType->getKeyTypes());
+        $this->assertTrue($resultInnerType->isList()->yes());
+        $this->assertSame([0], $resultInnerType->getNextAutoIndexes());
+        $this->assertTrue($resultInnerType->isSealed()->yes());
+    }
+
+    public function testOptionalNeverPruningPreservesLargeConstantShape(): void
+    {
+        $keyTypes = [];
+        $valueTypes = [];
+
+        for ($i = 0; $i <= 256; $i++) {
+            $keyTypes[] = new ConstantStringType('key' . $i);
+            $valueTypes[] = new IntegerType();
+        }
+
+        $expectedInnerType = new ConstantArrayType($keyTypes, $valueTypes);
+        $keyTypes[] = new ConstantStringType('ghost');
+        $valueTypes[] = new NeverType();
+        $innerType = new ConstantArrayType($keyTypes, $valueTypes, [0], [257]);
+
+        $outerBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $outerBuilder->setOffsetValueType(new ConstantStringType('outer'), $innerType);
+
+        $result = (new ArrayMergeType([$outerBuilder->getArray()]))->resolve();
+        $resultInnerType = $result->getOffsetValueType(new ConstantStringType('outer'));
+
+        $this->assertInstanceOf(ConstantArrayType::class, $resultInnerType);
+        $this->assertTrue($expectedInnerType->equals($resultInnerType));
         $this->assertTrue($resultInnerType->hasOffsetValueType(new ConstantStringType('key256'))->yes());
         $this->assertTrue($resultInnerType->hasOffsetValueType(new ConstantStringType('ghost'))->no());
     }
 
     public function testOptionalNeverPruningPreservesClosureShape(): void
     {
-        $innerBuilder = ConstantArrayTypeBuilder::createEmpty();
-
-        if (!self::hasOptionalMethod($innerBuilder, 'disableArrayDegradation')) {
-            $this->assertFalse(self::hasOptionalMethod($innerBuilder, 'disableArrayDegradation'));
-            return;
-        }
-
-        $innerBuilder->disableArrayDegradation();
         $closureType = self::getContainer()->getByType(TypeStringResolver::class)->resolve('Closure(): int');
         $this->assertInstanceOf(ClosureType::class, $closureType);
+        $keyTypes = [];
+        $valueTypes = [];
 
         for ($i = 0; $i < 32; $i++) {
-            $innerBuilder->setOffsetValueType(new ConstantStringType('callback' . $i), $closureType);
+            $keyTypes[] = new ConstantStringType('callback' . $i);
+            $valueTypes[] = $closureType;
         }
 
-        $innerBuilder->setOffsetValueType(new ConstantStringType('ghost'), new NeverType(), true);
+        $expectedInnerType = new ConstantArrayType($keyTypes, $valueTypes);
+        $keyTypes[] = new ConstantStringType('ghost');
+        $valueTypes[] = new NeverType();
+        $innerType = new ConstantArrayType($keyTypes, $valueTypes, [0], [32]);
 
         $outerBuilder = ConstantArrayTypeBuilder::createEmpty();
-        $outerBuilder->setOffsetValueType(new ConstantStringType('outer'), $innerBuilder->getArray());
+        $outerBuilder->setOffsetValueType(new ConstantStringType('outer'), $innerType);
 
         $result = (new ArrayMergeType([$outerBuilder->getArray()]))->resolve();
         $resultInnerType = $result->getOffsetValueType(new ConstantStringType('outer'));
 
         $this->assertInstanceOf(ConstantArrayType::class, $resultInnerType);
+        $this->assertTrue($expectedInnerType->equals($resultInnerType));
         $this->assertCount(32, $resultInnerType->getKeyTypes());
         $this->assertTrue($resultInnerType->hasOffsetValueType(new ConstantStringType('callback0'))->yes());
         $this->assertTrue($resultInnerType->hasOffsetValueType(new ConstantStringType('callback31'))->yes());
