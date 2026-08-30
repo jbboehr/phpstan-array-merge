@@ -19,6 +19,10 @@ declare(strict_types=1);
 
 namespace jbboehr\PHPStan\ArrayMerge;
 
+use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
+use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
+use PHPStan\PhpDocParser\Ast\Type\TypeNode;
+use PHPStan\PhpDocParser\Ast\Type\UnionTypeNode;
 use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Type;
@@ -32,6 +36,8 @@ use PHPStan\Type\UnionType;
  */
 final class ArrayMergeTypeOperandBenevolentUnionType extends BenevolentUnionType
 {
+    public const PHPDOC_TYPE_NAME = '__array_merge_benevolent';
+
     public function traverse(callable $cb): Type
     {
         $types = [];
@@ -62,6 +68,18 @@ final class ArrayMergeTypeOperandBenevolentUnionType extends BenevolentUnionType
         return $result instanceof UnionType
             ? new BenevolentUnionType($result->getTypes())
             : $result;
+    }
+
+    public function toPhpDocNode(): TypeNode
+    {
+        return new GenericTypeNode(
+            new IdentifierTypeNode(self::PHPDOC_TYPE_NAME),
+            [new UnionTypeNode(array_map(
+                static fn(Type $type): TypeNode =>
+                    ArrayMergeTypePhpDocBenevolentUnionType::toPhpDocNodeForType($type),
+                $this->getSortedTypes(),
+            ))],
+        );
     }
 
     /**

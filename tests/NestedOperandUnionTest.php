@@ -22,9 +22,12 @@ namespace jbboehr\PHPStan\ArrayMerge\Tests;
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
 use PHPStan\Analyser\NameScope;
 use PHPStan\PhpDoc\TypeStringResolver;
+use PHPStan\PhpDocParser\Printer\Printer;
 use PHPStan\Testing\PHPStanTestCase;
 use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\BooleanType;
+use PHPStan\Type\Constant\ConstantArrayType;
+use PHPStan\Type\Constant\ConstantStringType;
 use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Generic\TemplateTypeMap;
 use PHPStan\Type\Generic\TemplateTypeScope;
@@ -32,6 +35,7 @@ use PHPStan\Type\Generic\TemplateTypeVariance;
 use PHPStan\Type\Generic\TemplateTypeVarianceMap;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\MixedType;
+use PHPStan\Type\StringType;
 use PHPStan\Type\Type;
 use PHPStan\Type\VerbosityLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -205,6 +209,254 @@ final class NestedOperandUnionTest extends PHPStanTestCase
         $this->assertTrue($expectedValueType->equals(
             $fullyForwarded->resolve()->getIterableValueType(),
         ));
+    }
+
+    public function testPhpDocRoundTripPreservesBenevolentUnionSemantics(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $template = $this->createTemplate('inner', 'T', new MixedType());
+        $nameScope = new NameScope(
+            null,
+            [],
+            null,
+            'inner',
+            new TemplateTypeMap(['T' => $template]),
+        );
+        $original = $resolver->resolve('array-merge<array{value: T|array-key}>', $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $original);
+
+        $printed = (new Printer())->print($original->toPhpDocNode());
+        $roundTrip = $resolver->resolve($printed, $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $roundTrip);
+
+        $forwarded = $this->resolveTemplateTypes($roundTrip, $template, new IntegerType());
+        $this->assertInstanceOf(ArrayMergeType::class, $forwarded);
+        $actualValueType = $forwarded->resolve()->getIterableValueType();
+        $expectedValueType = $resolver->resolve('array{value: int|array-key}')->getIterableValueType();
+
+        $this->assertTrue($expectedValueType->equals($actualValueType));
+        $this->assertInstanceOf(BenevolentUnionType::class, $actualValueType);
+        $this->assertTrue($actualValueType->isAcceptedBy(new IntegerType(), true)->yes());
+
+        $forwardedBoolean = $this->resolveTemplateTypes($roundTrip, $template, new BooleanType());
+        $this->assertInstanceOf(ArrayMergeType::class, $forwardedBoolean);
+        $actualBooleanValueType = $forwardedBoolean->resolve()->getIterableValueType();
+        $expectedBooleanValueType = $resolver->resolve('array{value: bool|array-key}')->getIterableValueType();
+        $this->assertNotInstanceOf(BenevolentUnionType::class, $actualBooleanValueType);
+        $this->assertTrue($expectedBooleanValueType->equals($actualBooleanValueType));
+    }
+
+    public function testPhpDocRoundTripPreservesNestedBenevolentUnionSemantics(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $templateT = $this->createTemplate('inner', 'T', new IntegerType());
+        $templateU = $this->createTemplate('inner', 'U', new MixedType());
+        $nameScope = new NameScope(
+            null,
+            [],
+            null,
+            'inner',
+            new TemplateTypeMap([
+                'T' => $templateT,
+                'U' => $templateU,
+            ]),
+        );
+        $original = $resolver->resolve('array-merge<array{value: (T|array-key)|U}>', $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $original);
+
+        $printed = (new Printer())->print($original->toPhpDocNode());
+        $roundTrip = $resolver->resolve($printed, $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $roundTrip);
+
+        $direct = $this->resolveTemplateTypes($original, $templateT, new IntegerType());
+        $direct = $this->resolveTemplateTypes($direct, $templateU, $resolver->resolve('never'));
+        $this->assertInstanceOf(ArrayMergeType::class, $direct);
+        $directValueType = $direct->resolve()->getIterableValueType();
+
+        $forwarded = $this->resolveTemplateTypes($roundTrip, $templateT, new IntegerType());
+        $forwarded = $this->resolveTemplateTypes($forwarded, $templateU, $resolver->resolve('never'));
+        $this->assertInstanceOf(ArrayMergeType::class, $forwarded);
+        $actualValueType = $forwarded->resolve()->getIterableValueType();
+        $expectedValueType = $resolver->resolve('array{value: int|array-key}')->getIterableValueType();
+
+        $this->assertTrue($expectedValueType->equals($directValueType));
+        $this->assertTrue($expectedValueType->equals($actualValueType));
+        $this->assertInstanceOf(BenevolentUnionType::class, $actualValueType);
+        $this->assertTrue($actualValueType->isAcceptedBy(new IntegerType(), true)->yes());
+    }
+
+    public function testPhpDocRoundTripAfterPartialTemplateResolutionPreservesBenevolence(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $templateT = $this->createTemplate('inner', 'T', new MixedType());
+        $templateU = $this->createTemplate('inner', 'U', new MixedType());
+        $nameScope = new NameScope(
+            null,
+            [],
+            null,
+            'inner',
+            new TemplateTypeMap([
+                'T' => $templateT,
+                'U' => $templateU,
+            ]),
+        );
+        $original = $resolver->resolve(
+            'array-merge<array{value: (T|array-key)|(U|never)}>',
+            $nameScope,
+        );
+        $this->assertInstanceOf(ArrayMergeType::class, $original);
+
+        $partiallyForwarded = $this->resolveTemplateTypes(
+            $original,
+            $templateT,
+            $resolver->resolve('int|string'),
+        );
+        $this->assertInstanceOf(ArrayMergeType::class, $partiallyForwarded);
+        $printed = (new Printer())->print($partiallyForwarded->toPhpDocNode());
+        $roundTrip = $resolver->resolve($printed, $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $roundTrip);
+
+        $replacement = $resolver->resolve('1|2');
+        $direct = $this->resolveTemplateTypes($partiallyForwarded, $templateU, $replacement);
+        $forwarded = $this->resolveTemplateTypes($roundTrip, $templateU, $replacement);
+        $this->assertInstanceOf(ArrayMergeType::class, $direct);
+        $this->assertInstanceOf(ArrayMergeType::class, $forwarded);
+        $directValueType = $direct->resolve()->getIterableValueType();
+        $actualValueType = $forwarded->resolve()->getIterableValueType();
+
+        $this->assertTrue($directValueType->equals($actualValueType));
+        $this->assertInstanceOf(BenevolentUnionType::class, $actualValueType);
+        $this->assertTrue($actualValueType->isAcceptedBy(new IntegerType(), true)->yes());
+    }
+
+    public function testPhpDocRoundTripPreservesBroaderBenevolentUnionSemantics(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $templateT = $this->createTemplate('inner', 'T', new MixedType());
+        $templateU = $this->createTemplate(
+            'inner',
+            'U',
+            $resolver->resolve('bool|int|string'),
+        );
+        $nameScope = new NameScope(
+            null,
+            [],
+            null,
+            'inner',
+            new TemplateTypeMap([
+                'T' => $templateT,
+                'U' => $templateU,
+            ]),
+        );
+        $original = $resolver->resolve('array-merge<array{value: T|U|array-key}>', $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $original);
+
+        $partiallyForwarded = $this->resolveTemplateTypes(
+            $original,
+            $templateT,
+            new BenevolentUnionType([
+                new BooleanType(),
+                new IntegerType(),
+                new StringType(),
+            ]),
+        );
+        $this->assertInstanceOf(ArrayMergeType::class, $partiallyForwarded);
+        $printed = (new Printer())->print($partiallyForwarded->toPhpDocNode());
+        $roundTrip = $resolver->resolve($printed, $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $roundTrip);
+
+        $direct = $this->resolveTemplateTypes($partiallyForwarded, $templateU, new IntegerType());
+        $forwarded = $this->resolveTemplateTypes($roundTrip, $templateU, new IntegerType());
+        $this->assertInstanceOf(ArrayMergeType::class, $direct);
+        $this->assertInstanceOf(ArrayMergeType::class, $forwarded);
+        $directValueType = $direct->resolve()->getIterableValueType();
+        $actualValueType = $forwarded->resolve()->getIterableValueType();
+
+        $this->assertInstanceOf(BenevolentUnionType::class, $directValueType);
+        $this->assertTrue($directValueType->equals($actualValueType));
+        $this->assertInstanceOf(BenevolentUnionType::class, $actualValueType);
+        $this->assertTrue($actualValueType->isAcceptedBy(new IntegerType(), true)->yes());
+    }
+
+    public function testPhpDocRoundTripPreservesStagedTemplateResolution(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $arrayKeyType = $resolver->resolve('array-key');
+        $templateT = $this->createTemplate('inner', 'T', $arrayKeyType);
+        $templateU = $this->createTemplate('inner', 'U', $arrayKeyType);
+        $nameScope = new NameScope(
+            null,
+            [],
+            null,
+            'inner',
+            new TemplateTypeMap([
+                'T' => $templateT,
+                'U' => $templateU,
+            ]),
+        );
+        $original = $resolver->resolve('array-merge<array{value: T|U|array-key}>', $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $original);
+
+        $printed = (new Printer())->print($original->toPhpDocNode());
+        $roundTrip = $resolver->resolve($printed, $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $roundTrip);
+
+        $direct = $this->resolveTemplateTypes($original, $templateT, $arrayKeyType);
+        $forwarded = $this->resolveTemplateTypes($roundTrip, $templateT, $arrayKeyType);
+        $direct = $this->resolveTemplateTypes($direct, $templateU, $resolver->resolve('1|2'));
+        $forwarded = $this->resolveTemplateTypes($forwarded, $templateU, $resolver->resolve('1|2'));
+        $this->assertInstanceOf(ArrayMergeType::class, $direct);
+        $this->assertInstanceOf(ArrayMergeType::class, $forwarded);
+        $directValueType = $direct->resolve()->getIterableValueType();
+        $actualValueType = $forwarded->resolve()->getIterableValueType();
+
+        $this->assertTrue($arrayKeyType->equals($directValueType));
+        $this->assertTrue($arrayKeyType->equals($actualValueType));
+        $this->assertInstanceOf(BenevolentUnionType::class, $actualValueType);
+        $this->assertTrue($actualValueType->isAcceptedBy(new IntegerType(), true)->yes());
+    }
+
+    public function testPhpDocRoundTripPreservesNestedProgrammaticBenevolentUnion(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $templateT = $this->createTemplate('inner', 'T', new MixedType());
+        $templateU = $this->createTemplate('inner', 'U', new MixedType());
+        $nameScope = new NameScope(
+            null,
+            [],
+            null,
+            'inner',
+            new TemplateTypeMap([
+                'T' => $templateT,
+                'U' => $templateU,
+            ]),
+        );
+        $original = $resolver->resolve('array-merge<array{value: T|U}>', $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $original);
+
+        $benevolentValueType = $resolver->resolve('__benevolent<bool|int|string>');
+        $this->assertInstanceOf(BenevolentUnionType::class, $benevolentValueType);
+        $nestedReplacement = new ConstantArrayType(
+            [new ConstantStringType('inner')],
+            [$benevolentValueType],
+        );
+        $staged = $this->resolveTemplateTypes($original, $templateT, $nestedReplacement);
+        $this->assertInstanceOf(ArrayMergeType::class, $staged);
+
+        $printed = (new Printer())->print($staged->toPhpDocNode());
+        $roundTrip = $resolver->resolve($printed, $nameScope);
+        $neverType = $resolver->resolve('never');
+        $direct = $this->resolveTemplateTypes($staged, $templateU, $neverType);
+        $forwarded = $this->resolveTemplateTypes($roundTrip, $templateU, $neverType);
+        $this->assertInstanceOf(ArrayMergeType::class, $direct);
+        $this->assertInstanceOf(ArrayMergeType::class, $forwarded);
+        $directValueType = $direct->resolve()->getIterableValueType();
+        $actualValueType = $forwarded->resolve()->getIterableValueType();
+
+        $this->assertInstanceOf(ConstantArrayType::class, $directValueType);
+        $this->assertInstanceOf(ConstantArrayType::class, $actualValueType);
+        $this->assertInstanceOf(BenevolentUnionType::class, $directValueType->getValueTypes()[0]);
+        $this->assertInstanceOf(BenevolentUnionType::class, $actualValueType->getValueTypes()[0]);
     }
 
     private function createTemplate(string $functionName, string $name, Type $bound): TemplateType

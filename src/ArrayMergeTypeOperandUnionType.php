@@ -19,6 +19,8 @@ declare(strict_types=1);
 
 namespace jbboehr\PHPStan\ArrayMerge;
 
+use PHPStan\PhpDocParser\Ast\Type\TypeNode;
+use PHPStan\PhpDocParser\Ast\Type\UnionTypeNode;
 use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\NeverType;
@@ -124,6 +126,15 @@ final class ArrayMergeTypeOperandUnionType extends UnionType
         }
 
         return TypeCombinator::union(...$typesWithoutNever);
+    }
+
+    public function toPhpDocNode(): TypeNode
+    {
+        return new UnionTypeNode(array_map(
+            static fn(Type $type): TypeNode =>
+                ArrayMergeTypePhpDocBenevolentUnionType::toPhpDocNodeForType($type),
+            $this->sourceTypes,
+        ));
     }
 
     /**

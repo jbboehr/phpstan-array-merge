@@ -59,6 +59,10 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
 
             $typeName = $typeNode->type;
 
+            if ($typeName->name === ArrayMergeTypeOperandBenevolentUnionType::PHPDOC_TYPE_NAME) {
+                return $this->resolveOperandBenevolentUnionType($typeNode, $nameScope);
+            }
+
             if ($typeName->name !== 'array-merge' || count($typeNode->genericTypes) <= 0) {
                 return null;
             }
@@ -81,6 +85,23 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
         } catch (\Throwable $e) {
             ShouldNotHappenException::rethrow($e);
         }
+    }
+
+    private function resolveOperandBenevolentUnionType(
+        GenericTypeNode $typeNode,
+        NameScope $nameScope,
+    ): Type {
+        if (count($typeNode->genericTypes) !== 1) {
+            return new ErrorType();
+        }
+
+        $type = $this->resolveOperandType($typeNode->genericTypes[0], $nameScope);
+
+        if (!($type instanceof UnionType) || $type instanceof TemplateType) {
+            return $type;
+        }
+
+        return new ArrayMergeTypeOperandBenevolentUnionType($type->getTypes());
     }
 
     private function resolveOperandType(TypeNode $typeNode, NameScope $nameScope): Type
