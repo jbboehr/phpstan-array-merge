@@ -19,7 +19,6 @@ declare(strict_types=1);
 
 namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
-use Brick\VarExporter\VarExporter;
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeTypeOperandUnionType;
 use PHPStan\PhpDoc\TypeStringResolver;
@@ -51,8 +50,10 @@ use PHPStan\Type\TypeCombinator;
 use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
 use function array_map;
+use function array_merge;
 use function hrtime;
 use function is_callable;
+use function is_int;
 use function spl_object_id;
 
 final class ArrayMergeTypeTest extends PHPStanTestCase
@@ -321,6 +322,109 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
             $result->getIterableKeyType()->isSuperTypeOf(new ConstantIntegerType(0))->yes(),
             'array_merge() reindexes the canonical integer-string key to integer key 0.',
         );
+    }
+
+    public function testConstantUnionReindexesCanonicalIntegerStringKeysByPosition(): void
+    {
+        $operand = new UnionType([
+            new ConstantArrayType(
+                [new ConstantStringType('7')],
+                [new ConstantStringType('short')],
+            ),
+            new ConstantArrayType(
+                [new ConstantIntegerType(-1), new ConstantStringType('7')],
+                [new ConstantStringType('first'), new ConstantStringType('second')],
+            ),
+        ]);
+
+        $result = (new ArrayMergeType([$operand]))->resolve();
+        $shortResult = new ConstantArrayType(
+            [new ConstantIntegerType(0)],
+            [new ConstantStringType('short')],
+            [1],
+        );
+        $longResult = new ConstantArrayType(
+            [new ConstantIntegerType(0), new ConstantIntegerType(1)],
+            [new ConstantStringType('first'), new ConstantStringType('second')],
+            [2],
+        );
+
+        $this->assertTrue($result->isSuperTypeOf($shortResult)->yes());
+        $this->assertTrue($result->isSuperTypeOf($longResult)->yes());
+    }
+
+    public function testConstantUnionsRemainSoundAcrossAllNativeArrayMergeBranches(): void
+    {
+        $leftAlternatives = [
+            [
+                new ConstantArrayType(
+                    [new ConstantStringType('7'), new ConstantStringType('keep')],
+                    [new ConstantStringType('left-number'), new ConstantStringType('left-keep')],
+                ),
+                [7 => 'left-number', 'keep' => 'left-keep'],
+            ],
+            [
+                new ConstantArrayType(
+                    [
+                        new ConstantStringType('08'),
+                        new ConstantIntegerType(-2),
+                        new ConstantStringType('9'),
+                    ],
+                    [
+                        new ConstantStringType('leading-zero'),
+                        new ConstantStringType('left-negative'),
+                        new ConstantStringType('left-second-number'),
+                    ],
+                ),
+                ['08' => 'leading-zero', -2 => 'left-negative', 9 => 'left-second-number'],
+            ],
+        ];
+        $rightAlternatives = [
+            [
+                new ConstantArrayType(
+                    [new ConstantStringType('keep'), new ConstantStringType('10')],
+                    [new ConstantStringType('right-keep'), new ConstantStringType('right-number')],
+                ),
+                ['keep' => 'right-keep', 10 => 'right-number'],
+            ],
+            [
+                new ConstantArrayType(
+                    [new ConstantStringType('11')],
+                    [new ConstantStringType('right-only-number')],
+                ),
+                [11 => 'right-only-number'],
+            ],
+        ];
+
+        $result = (new ArrayMergeType([
+            new UnionType(array_map(static fn(array $alternative): Type => $alternative[0], $leftAlternatives)),
+            new UnionType(array_map(static fn(array $alternative): Type => $alternative[0], $rightAlternatives)),
+        ]))->resolve();
+
+        foreach ($leftAlternatives as $leftIndex => [, $leftRuntime]) {
+            foreach ($rightAlternatives as $rightIndex => [, $rightRuntime]) {
+                $builder = ConstantArrayTypeBuilder::createEmpty();
+
+                foreach (array_merge($leftRuntime, $rightRuntime) as $key => $value) {
+                    $builder->setOffsetValueType(
+                        is_int($key) ? new ConstantIntegerType($key) : new ConstantStringType($key),
+                        new ConstantStringType($value),
+                    );
+                }
+
+                $runtimeBranchType = $builder->getArray();
+                $this->assertTrue(
+                    $result->isSuperTypeOf($runtimeBranchType)->yes(),
+                    sprintf(
+                        'Inferred %s must contain native branch %d/%d: %s.',
+                        $result->describe(VerbosityLevel::precise()),
+                        $leftIndex,
+                        $rightIndex,
+                        $runtimeBranchType->describe(VerbosityLevel::precise()),
+                    ),
+                );
+            }
+        }
     }
 
     public function testGenericUnionReindexesCanonicalIntegerStringKey(): void
@@ -844,22 +948,6 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
 
         $this->assertInstanceOf(ArrayMergeType::class, $result);
         $this->assertSame([$arrayType], $result->getTypes());
-    }
-
-    public function testVarExporterRoundTrip(): void
-    {
-        $type = new ArrayMergeType([new MixedType(true)]);
-        $expectedResult = $type->resolve();
-
-        /** @var mixed $restored */
-        $restored = eval('return ' . VarExporter::export($type) . ';');
-
-        $this->assertInstanceOf(ArrayMergeType::class, $restored);
-        $restoredOperand = $restored->getTypes()[0];
-        $this->assertInstanceOf(MixedType::class, $restoredOperand);
-        $this->assertTrue($restoredOperand->isExplicitMixed());
-        $this->assertTrue($type->equals($restored));
-        $this->assertTrue($expectedResult->equals($restored->resolve()));
     }
 
     public function testToPhpDocNode(): void

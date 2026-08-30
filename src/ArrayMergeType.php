@@ -492,6 +492,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             }
 
             foreach ($keyTypes as $i => $keyType) {
+                $keyType = self::normalizeArrayMergeKeyType($keyType);
                 $builder->setOffsetValueType(
                     $keyType instanceof ConstantIntegerType ? null : $keyType,
                     $valueTypes[$i],
@@ -563,7 +564,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
     public function toPhpDocNode(): TypeNode
     {
         return new GenericTypeNode(new IdentifierTypeNode('array-merge'), array_map(static function (Type $type) {
-            return $type->toPhpDocNode();
+            return ArrayMergeTypePhpDocBenevolentUnionType::toPhpDocNodeForType($type);
         }, $this->types));
     }
 

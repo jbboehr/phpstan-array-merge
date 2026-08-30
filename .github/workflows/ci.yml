@@ -118,10 +118,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - phpstan-version: "1.12"
-            phpstan-constraint: "^1.12"
+          - phpstan-version: "1.12.1"
+            phpstan-constraint: "1.12.1"
             phpstan-phpunit-constraint: "^1.4.2"
-            phpstan-strict-rules-constraint: "^1.6.2"
+            phpstan-strict-rules-constraint: "1.5.2"
           - phpstan-version: "2.0.4"
             phpstan-constraint: "2.0.4"
             phpstan-phpunit-constraint: "2.0.6"

@@ -79,6 +79,23 @@ final class NestedOperandUnionTest extends PHPStanTestCase
         ));
     }
 
+    public function testPhpDocRoundTripPreservesArrayKeyInOrdinaryOperand(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $original = $resolver->resolve('array-merge<array{value: array-key}>');
+        $this->assertInstanceOf(ArrayMergeType::class, $original);
+        $expectedValueType = $original->resolve()->getIterableValueType();
+        $this->assertInstanceOf(BenevolentUnionType::class, $expectedValueType);
+
+        $printed = (new Printer())->print($original->toPhpDocNode());
+        $roundTrip = $resolver->resolve($printed, new NameScope(null, []));
+        $this->assertInstanceOf(ArrayMergeType::class, $roundTrip);
+        $actualValueType = $roundTrip->resolve()->getIterableValueType();
+
+        $this->assertInstanceOf(BenevolentUnionType::class, $actualValueType);
+        $this->assertTrue($expectedValueType->equals($actualValueType));
+    }
+
     public function testImpossibleShapeIsNeutralThroughDeepTemplateForwarding(): void
     {
         $resolver = self::getContainer()->getByType(TypeStringResolver::class);

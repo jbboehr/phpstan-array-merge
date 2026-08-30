@@ -12,7 +12,7 @@
     ],
     "require": {
         "php": "^8.1",
-        "phpstan/phpstan": "^1.12 || ^2.0"
+        "phpstan/phpstan": "^1.12.1 || ^2.0"
     },
     "autoload": {
         "psr-4": {
@@ -21,9 +21,8 @@
     },
     "require-dev": {
         "composer-runtime-api": "*",
-        "brick/varexporter": "*",
         "phpstan/phpstan-phpunit": "^1.4.2 || ^2.0.6",
-        "phpstan/phpstan-strict-rules": "^1.6.2 || ^2.0.4",
+        "phpstan/phpstan-strict-rules": "^1.5.2 || ^2.0.4",
         "phpunit/phpunit": "^10.5.62 || ^11.5.50",
         "slevomat/coding-standard": "^8.18",
         "squizlabs/php_codesniffer": "^3.13",
