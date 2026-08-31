@@ -94,6 +94,57 @@ final class ArrayMergeTypeOperandUnionType extends UnionType
             return $this;
         }
 
+        return $this->recombineTypes($types);
+    }
+
+    public function traverseSimultaneously(Type $right, callable $cb): Type
+    {
+        // PHPStan uses this traversal for too-wide diagnostics. Skipping an unresolved
+        // right side is conservative; traversing it can discard later specialization.
+        if (TypeUtils::containsTemplateType($right)) {
+            return $this;
+        }
+
+        $rightTypes = TypeUtils::flattenTypes($right);
+        $types = [];
+        $replace = false;
+
+        foreach ($this->sourceTypes as $type) {
+            $candidates = [];
+
+            foreach ($rightTypes as $i => $rightType) {
+                if (!$type->isSuperTypeOf($rightType)->yes()) {
+                    continue;
+                }
+
+                $candidates[] = $rightType;
+                unset($rightTypes[$i]);
+            }
+
+            if ([] === $candidates) {
+                $types[] = $type;
+                continue;
+            }
+
+            $newType = $cb($type, TypeCombinator::union(...$candidates));
+            $types[] = $newType;
+            if ($newType !== $type) {
+                $replace = true;
+            }
+        }
+
+        return $replace ? $this->recombineTypes($types) : $this;
+    }
+
+    /**
+     * @param non-empty-list<Type> $types
+     */
+    private function recombineTypes(array $types): Type
+    {
+        $types = array_map(
+            static fn(Type $type): Type => ArrayMergeType::normalizeUninhabitedArrays($type),
+            $types,
+        );
         $typesWithoutNever = array_values(array_filter(
             $types,
             static fn(Type $type): bool => !($type instanceof NeverType),

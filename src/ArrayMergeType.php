@@ -45,10 +45,10 @@ use PHPStan\Type\Traits\LateResolvableTypeTrait;
 use PHPStan\Type\Traits\NonGeneralizableTypeTrait;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeCombinator;
-use PHPStan\Type\TypeTraverser;
 use PHPStan\Type\TypeUtils;
 use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
+use SplObjectStorage;
 use function array_fill_keys;
 use function is_callable;
 use function sprintf;
@@ -133,13 +133,23 @@ class ArrayMergeType implements CompoundType, LateResolvableType
 
     public function isResolvable(): bool
     {
+        $hasTemplateType = false;
+
         foreach ($this->types as $type) {
-            if (TypeUtils::containsTemplateType($type)) {
-                return false;
+            $type = self::removeTopLevelNeverAlternatives($type);
+
+            if (!TypeUtils::containsTemplateType($type)) {
+                continue;
             }
+
+            if (!$type->isArray()->yes()) {
+                return true;
+            }
+
+            $hasTemplateType = true;
         }
 
-        return true;
+        return !$hasTemplateType;
     }
 
     protected function getResult(): Type
@@ -150,7 +160,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         $types = [];
 
         foreach ($this->types as $type) {
-            $type = self::removeUninhabitedConstantArrays($type);
+            $type = self::normalizeUninhabitedArraysForInference($type);
             $type = self::removeTopLevelNeverAlternatives($type);
 
             if ($type instanceof NeverType) {
@@ -366,69 +376,138 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         return $keyType instanceof MixedType ? $keyType : $keyType->toArrayKey();
     }
 
-    private static function removeUninhabitedConstantArrays(Type $type): Type
+    /** @internal */
+    public static function normalizeUninhabitedArrays(Type $type): Type
     {
-        return TypeTraverser::map($type, static function (Type $innerType, callable $traverse): Type {
-            $innerType = $traverse($innerType);
+        /** @var SplObjectStorage<Type, Type> $normalizedTypes */
+        $normalizedTypes = new SplObjectStorage();
 
-            if ($innerType instanceof ConstantArrayType) {
-                $hasOptionalNever = false;
-                $hasIntegerKey = false;
-                $keyTypes = [];
-                $valueTypes = [];
-                $optionalKeys = [];
-                $optionalKeyLookup = array_fill_keys($innerType->getOptionalKeys(), true);
+        return self::normalizeUninhabitedArraysWithMemo($type, $normalizedTypes, false);
+    }
 
-                foreach ($innerType->getKeyTypes() as $i => $keyType) {
-                    $valueType = $innerType->getValueTypes()[$i];
-                    $hasIntegerKey = $hasIntegerKey || $keyType instanceof ConstantIntegerType;
-                    $isOptionalKey = isset($optionalKeyLookup[$i]);
+    private static function normalizeUninhabitedArraysForInference(Type $type): Type
+    {
+        /** @var SplObjectStorage<Type, Type> $normalizedTypes */
+        $normalizedTypes = new SplObjectStorage();
 
-                    if ($valueType instanceof NeverType) {
-                        if (!$isOptionalKey) {
-                            return new NeverType();
-                        }
+        return self::normalizeUninhabitedArraysWithMemo($type, $normalizedTypes, true);
+    }
 
-                        $hasOptionalNever = true;
-                        continue;
-                    }
+    /**
+     * @param SplObjectStorage<Type, Type> $normalizedTypes
+     */
+    private static function normalizeUninhabitedArraysWithMemo(
+        Type $type,
+        SplObjectStorage $normalizedTypes,
+        bool $useTemplateBounds,
+    ): Type {
+        if (isset($normalizedTypes[$type])) {
+            return $normalizedTypes[$type];
+        }
 
-                    if ($isOptionalKey) {
-                        $optionalKeys[] = count($keyTypes);
-                    }
+        // Break cycles conservatively while this node is being normalized.
+        $normalizedTypes[$type] = $type;
 
-                    $keyTypes[] = $keyType;
-                    $valueTypes[] = $valueType;
+        if ($type instanceof TemplateType) {
+            $bound = self::normalizeUninhabitedArraysWithMemo(
+                $type->getBound(),
+                $normalizedTypes,
+                $useTemplateBounds,
+            );
+            $result = $bound instanceof NeverType || $useTemplateBounds ? $bound : $type;
+            $normalizedTypes[$type] = $result;
+
+            return $result;
+        }
+
+        $traversedType = $type->traverse(
+            static fn(Type $innerType): Type =>
+                self::normalizeUninhabitedArraysWithMemo(
+                    $innerType,
+                    $normalizedTypes,
+                    $useTemplateBounds,
+                ),
+        );
+        $result = self::normalizeTraversedUninhabitedArray($traversedType);
+        $normalizedTypes[$type] = $result;
+
+        return $result;
+    }
+
+    private static function normalizeTraversedUninhabitedArray(Type $type): Type
+    {
+        if (
+            $type->isArray()->yes()
+            && $type->isIterableAtLeastOnce()->yes()
+            && (
+                $type->getIterableKeyType() instanceof NeverType
+                || $type->getIterableValueType() instanceof NeverType
+            )
+        ) {
+            return new NeverType();
+        }
+
+        $constantArrays = $type->getConstantArrays();
+
+        if (count($constantArrays) !== 1 || $type !== $constantArrays[0]) {
+            return $type;
+        }
+
+        $type = $constantArrays[0];
+
+        $hasOptionalNever = false;
+        $hasIntegerKey = false;
+        $keyTypes = [];
+        $valueTypes = [];
+        $optionalKeys = [];
+        $optionalKeyLookup = array_fill_keys($type->getOptionalKeys(), true);
+
+        foreach ($type->getKeyTypes() as $i => $keyType) {
+            $valueType = $type->getValueTypes()[$i];
+            $hasIntegerKey = $hasIntegerKey || $keyType instanceof ConstantIntegerType;
+            $isOptionalKey = isset($optionalKeyLookup[$i]);
+
+            if ($valueType instanceof NeverType) {
+                if (!$isOptionalKey) {
+                    return new NeverType();
                 }
 
-                if (!$hasOptionalNever) {
-                    return $innerType;
-                }
-
-                if (self::hasUnknownExtraOffsets($innerType)) {
-                    return $innerType;
-                }
-
-                if ([0] !== $innerType->getNextAutoIndexes()) {
-                    return $innerType;
-                }
-
-                if ($hasIntegerKey) {
-                    return $innerType;
-                }
-
-                return new ConstantArrayType(
-                    $keyTypes,
-                    $valueTypes,
-                    $innerType->getNextAutoIndexes(),
-                    $optionalKeys,
-                    [] === $keyTypes ? TrinaryLogic::createYes() : $innerType->isList(),
-                    self::getUnsealedTypes($innerType),
-                );
+                $hasOptionalNever = true;
+                continue;
             }
 
-            return $innerType;
-        });
+            if ($isOptionalKey) {
+                $optionalKeys[] = count($keyTypes);
+            }
+
+            $keyTypes[] = $keyType;
+            $valueTypes[] = $valueType;
+        }
+
+        if (!$hasOptionalNever) {
+            return $type;
+        }
+
+        if (self::hasUnknownExtraOffsets($type)) {
+            return $type;
+        }
+
+        if ([0] !== $type->getNextAutoIndexes()) {
+            return $type;
+        }
+
+        if ($hasIntegerKey) {
+            return $type;
+        }
+
+        return new ConstantArrayType(
+            $keyTypes,
+            $valueTypes,
+            $type->getNextAutoIndexes(),
+            $optionalKeys,
+            [] === $keyTypes ? TrinaryLogic::createYes() : $type->isList(),
+            self::getUnsealedTypes($type),
+        );
     }
 
     private static function getOptionalMethod(object $object, string $method): ?Closure

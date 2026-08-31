@@ -33,6 +33,7 @@ use PHPStan\PhpDocParser\Ast\Type\UnionTypeNode;
 use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\ErrorType;
 use PHPStan\Type\Generic\TemplateType;
+use PHPStan\Type\NeverType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeUtils;
 use PHPStan\Type\UnionType;
@@ -147,13 +148,27 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
         NameScope $nameScope,
     ): Type {
         $resolvedTypes = [];
+        $survivingTypeNodes = [];
 
         foreach ($typeNode->types as $innerTypeNode) {
-            $resolvedTypes[] = $this->typeNodeResolver->resolve($innerTypeNode, $nameScope);
+            $resolvedType = ArrayMergeType::normalizeUninhabitedArrays(
+                $this->typeNodeResolver->resolve($innerTypeNode, $nameScope),
+            );
+
+            if ($resolvedType instanceof NeverType) {
+                continue;
+            }
+
+            $resolvedTypes[] = $resolvedType;
+            $survivingTypeNodes[] = $innerTypeNode;
         }
 
         if ([] === $resolvedTypes) {
-            return new ErrorType();
+            return new NeverType();
+        }
+
+        if (count($resolvedTypes) === 1) {
+            return $resolvedTypes[0];
         }
 
         $containsTemplateType = false;
@@ -167,7 +182,7 @@ final class ArrayMergeTypeNodeResolverExtension implements TypeNodeResolverExten
 
         if (!$containsTemplateType) {
             return $this->typeNodeResolver->resolve(
-                new UnionTypeNode($typeNode->types),
+                new UnionTypeNode($survivingTypeNodes),
                 $nameScope,
             );
         }

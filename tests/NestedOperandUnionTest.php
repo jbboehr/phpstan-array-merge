@@ -27,7 +27,9 @@ use PHPStan\Testing\PHPStanTestCase;
 use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\BooleanType;
 use PHPStan\Type\Constant\ConstantArrayType;
+use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\Constant\ConstantStringType;
+use PHPStan\Type\ErrorType;
 use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Generic\TemplateTypeMap;
 use PHPStan\Type\Generic\TemplateTypeScope;
@@ -35,6 +37,7 @@ use PHPStan\Type\Generic\TemplateTypeVariance;
 use PHPStan\Type\Generic\TemplateTypeVarianceMap;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\MixedType;
+use PHPStan\Type\NeverType;
 use PHPStan\Type\StringType;
 use PHPStan\Type\Type;
 use PHPStan\Type\VerbosityLevel;
@@ -61,6 +64,15 @@ final class NestedOperandUnionTest extends PHPStanTestCase
         yield 'array shorthand with broad array' => ['array|int[]'];
     }
 
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function invalidTemplateOperandProvider(): iterable
+    {
+        yield 'bare mixed-bounded template' => ['array-merge<T>'];
+        yield 'mixed-bounded template unioned with array' => ['array-merge<T|array{a: int}>'];
+    }
+
     #[DataProvider('nestedUnionProvider')]
     public function testSingleShapeMergePreservesNestedUnionSemantics(string $valueType): void
     {
@@ -77,6 +89,24 @@ final class NestedOperandUnionTest extends PHPStanTestCase
             $result->describe(VerbosityLevel::precise()),
             get_debug_type($result),
         ));
+    }
+
+    #[DataProvider('invalidTemplateOperandProvider')]
+    public function testRejectsMixedBoundedTemplateOperand(string $mergeType): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $template = $this->createTemplate('invalid', 'T', new MixedType());
+        $nameScope = new NameScope(
+            null,
+            [],
+            null,
+            'invalid',
+            new TemplateTypeMap(['T' => $template]),
+        );
+
+        $merge = $resolver->resolve($mergeType, $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $merge);
+        $this->assertInstanceOf(ErrorType::class, $merge->resolve());
     }
 
     public function testPhpDocRoundTripPreservesArrayKeyInOrdinaryOperand(): void
@@ -145,6 +175,40 @@ final class NestedOperandUnionTest extends PHPStanTestCase
             'array{outer: array{inner: array<string, int>}}',
             $resultWithImpossibleShape->resolve()->describe(VerbosityLevel::precise()),
         );
+    }
+
+    public function testUnionOfImpossibleGenericArraysResolvesToNever(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $merge = $resolver->resolve(
+            'array-merge<non-empty-array<never, string>|non-empty-array<int, never>>',
+        );
+        $this->assertInstanceOf(ArrayMergeType::class, $merge);
+
+        $this->assertInstanceOf(NeverType::class, $merge->resolve());
+    }
+
+    public function testRequiredNestedImpossibleGenericArrayResolvesToNever(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $merge = $resolver->resolve(
+            'array-merge<array{outer: non-empty-array<never, string>}>',
+        );
+        $this->assertInstanceOf(ArrayMergeType::class, $merge);
+
+        $this->assertInstanceOf(NeverType::class, $merge->resolve());
+    }
+
+    public function testImpossibleGenericArrayBranchIsNeutral(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $expected = $resolver->resolve('array{valid: int}');
+        $merge = $resolver->resolve(
+            'array-merge<non-empty-array<never, string>|array{valid: int}>',
+        );
+        $this->assertInstanceOf(ArrayMergeType::class, $merge);
+
+        $this->assertTrue($expected->equals($merge->resolve()));
     }
 
     public function testTemplateForwardingPreservesBenevolentUnionSemantics(): void
@@ -226,6 +290,34 @@ final class NestedOperandUnionTest extends PHPStanTestCase
         $this->assertTrue($expectedValueType->equals(
             $fullyForwarded->resolve()->getIterableValueType(),
         ));
+    }
+
+    public function testScalarTemplateForwardingPreservesForwardedTemplate(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $template = $this->createTemplate('inner', 'T', new IntegerType());
+        $nameScope = new NameScope(
+            null,
+            [],
+            null,
+            'inner',
+            new TemplateTypeMap(['T' => $template]),
+        );
+        $merge = $resolver->resolve('array-merge<array{value: T|array-key}>', $nameScope);
+        $this->assertInstanceOf(ArrayMergeType::class, $merge);
+
+        $forwardedTemplate = $this->createTemplate('forwarder', 'U', new IntegerType());
+        $deferred = $this->resolveTemplateTypes($merge, $template, $forwardedTemplate);
+        $this->assertInstanceOf(ArrayMergeType::class, $deferred);
+        $this->assertFalse($deferred->isResolvable());
+
+        $specialized = $this->resolveTemplateTypes(
+            $deferred,
+            $forwardedTemplate,
+            new ConstantIntegerType(1),
+        );
+
+        $this->assertNotSame($deferred, $specialized);
     }
 
     public function testPhpDocRoundTripPreservesBenevolentUnionSemantics(): void

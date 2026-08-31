@@ -20,6 +20,7 @@ declare(strict_types=1);
 namespace jbboehr\PHPStan\ArrayMerge\Tests;
 
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
+use jbboehr\PHPStan\ArrayMerge\ArrayMergeTypeOperandBenevolentUnionType;
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeTypeOperandUnionType;
 use PHPStan\PhpDoc\TypeStringResolver;
 use PHPStan\PhpDocParser\Printer\Printer;
@@ -129,6 +130,7 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
     public function testIsResolvable(): void
     {
         $template = $this->createMock(TemplateType::class);
+        $template->method('isArray')->willReturn(TrinaryLogic::createYes());
 
         $this->assertTrue((new ArrayMergeType([new ArrayType(new IntegerType(), new StringType())]))->isResolvable());
         $this->assertFalse((new ArrayMergeType([$template]))->isResolvable());
@@ -768,6 +770,118 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         );
     }
 
+    public function testUninhabitedArrayNormalizationVisitsSharedTemplateGraphsOnce(): void
+    {
+        $leaf = $this->createMock(Type::class);
+        $leaf->expects(self::once())->method('traverse')->willReturnSelf();
+        $leaf->method('isArray')->willReturn(TrinaryLogic::createNo());
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+        $builder->setOffsetValueType(new ConstantStringType('inner'), $leaf);
+        $bound = $builder->getArray();
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+        $builder->setOffsetValueType(new ConstantStringType('default'), $leaf);
+        $default = $builder->getArray();
+        $template = null;
+        $createTemplate = new \ReflectionMethod(
+            'PHPStan\Type\Generic\TemplateTypeFactory',
+            'create',
+        );
+        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
+            ->invoke(null, __FUNCTION__);
+        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
+
+        for ($i = 0; $i < 8; $i++) {
+            $template = $createTemplate->getNumberOfParameters() >= 6
+                ? $createTemplate->invoke(
+                    null,
+                    $scope,
+                    'T' . $i,
+                    $bound,
+                    TemplateTypeVariance::createInvariant(),
+                    null,
+                    $default,
+                )
+                : $createTemplate->invoke(
+                    null,
+                    $scope,
+                    'T' . $i,
+                    $bound,
+                    TemplateTypeVariance::createInvariant(),
+                );
+            $this->assertInstanceOf(TemplateType::class, $template);
+            $builder = ConstantArrayTypeBuilder::createEmpty();
+            $builder->setOffsetValueType(new ConstantStringType('inner'), $template);
+            $bound = $builder->getArray();
+            $builder = ConstantArrayTypeBuilder::createEmpty();
+            $builder->setOffsetValueType(new ConstantStringType('default'), $template);
+            $default = $builder->getArray();
+        }
+
+        $this->assertInstanceOf(TemplateType::class, $template);
+        $this->assertSame($template, ArrayMergeType::normalizeUninhabitedArrays($template));
+    }
+
+    public function testUninhabitedArrayNormalizationPreservesViableTemplateIdentity(): void
+    {
+        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
+            ->invoke(null, __FUNCTION__);
+        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
+        $impossibleArray = new IntersectionType([
+            new ArrayType(new NeverType(), new StringType()),
+            new NonEmptyArrayType(),
+        ]);
+        $template = (new \ReflectionMethod(
+            'PHPStan\Type\Generic\TemplateTypeFactory',
+            'create',
+        ))->invoke(
+            null,
+            $scope,
+            'T',
+            new UnionType([$impossibleArray, new IntegerType()]),
+            TemplateTypeVariance::createInvariant(),
+        );
+        $this->assertInstanceOf(TemplateType::class, $template);
+
+        $this->assertSame($template, ArrayMergeType::normalizeUninhabitedArrays($template));
+    }
+
+    public function testMergeInferenceUsesViableTemplateBoundBranches(): void
+    {
+        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
+            ->invoke(null, __FUNCTION__);
+        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
+        $impossibleBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $impossibleBuilder->setOffsetValueType(
+            new ConstantStringType('bad'),
+            new NeverType(),
+        );
+        $viableBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $viableBuilder->setOffsetValueType(
+            new ConstantStringType('valid'),
+            new IntegerType(),
+        );
+        $viableType = $viableBuilder->getArray();
+        $template = (new \ReflectionMethod(
+            'PHPStan\Type\Generic\TemplateTypeFactory',
+            'create',
+        ))->invoke(
+            null,
+            $scope,
+            'T',
+            new UnionType([$impossibleBuilder->getArray(), $viableType]),
+            TemplateTypeVariance::createInvariant(),
+        );
+        $this->assertInstanceOf(TemplateType::class, $template);
+
+        $result = (new ArrayMergeType([$template]))->resolve();
+
+        $this->assertTrue($viableType->equals($result), sprintf(
+            'Expected %s, got %s',
+            $viableType->describe(VerbosityLevel::precise()),
+            $result->describe(VerbosityLevel::precise()),
+        ));
+    }
+
     public function testOptionalNeverPruningProducesDefiniteEmptyList(): void
     {
         $innerBuilder = ConstantArrayTypeBuilder::createEmpty();
@@ -1042,6 +1156,16 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         $this->assertFalse((new ArrayMergeType([$result]))->isResolvable());
     }
 
+    public function testOperandUnionSimultaneousTraversalPreservesNestedTemplateUnion(): void
+    {
+        $this->assertSimultaneousTraversalPreservesNestedTemplateUnion(false);
+    }
+
+    public function testBenevolentOperandUnionSimultaneousTraversalPreservesNestedTemplateUnion(): void
+    {
+        $this->assertSimultaneousTraversalPreservesNestedTemplateUnion(true);
+    }
+
     public function testOperandUnionTraverseRestoresNestedBenevolentUnionAfterTemplateResolution(): void
     {
         $emptyType = ConstantArrayTypeBuilder::createEmpty()->getArray();
@@ -1175,6 +1299,50 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
 
         $this->assertSame($type, $result);
         $this->assertFalse($called);
+    }
+
+    private function assertSimultaneousTraversalPreservesNestedTemplateUnion(bool $benevolent): void
+    {
+        $emptyType = ConstantArrayTypeBuilder::createEmpty()->getArray();
+        $aBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $aBuilder->setOffsetValueType(new ConstantStringType('a'), new IntegerType());
+        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
+            ->invoke(null, __FUNCTION__);
+        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
+        $template = (new \ReflectionMethod('PHPStan\Type\Generic\TemplateTypeFactory', 'create'))->invoke(
+            null,
+            $scope,
+            'T',
+            new UnionType([$emptyType, $aBuilder->getArray()]),
+            TemplateTypeVariance::createInvariant(),
+        );
+        $this->assertInstanceOf(TemplateType::class, $template);
+
+        $cBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $cBuilder->setOffsetValueType(new ConstantStringType('c'), new IntegerType());
+        $replacement = $benevolent
+            ? new BenevolentUnionType([$template, $cBuilder->getArray()])
+            : new UnionType([$template, $cBuilder->getArray()]);
+        $placeholder = new ArrayType(new MixedType(), new MixedType());
+        $nonEmpty = new IntersectionType([
+            new ArrayType(new StringType(), new IntegerType()),
+            new NonEmptyArrayType(),
+        ]);
+        $impossibleBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $impossibleBuilder->setOffsetValueType(new ConstantStringType('bad'), new NeverType());
+        $operandTypes = [$placeholder, $nonEmpty, $impossibleBuilder->getArray()];
+        $type = $benevolent
+            ? new ArrayMergeTypeOperandBenevolentUnionType($operandTypes)
+            : new ArrayMergeTypeOperandUnionType($operandTypes);
+
+        $result = $type->traverseSimultaneously(
+            $placeholder,
+            static fn(Type $leftType, Type $rightType): Type => $leftType === $placeholder
+                ? $replacement
+                : $leftType,
+        );
+
+        $this->assertFalse((new ArrayMergeType([$result]))->isResolvable());
     }
 
     private static function hasOptionalMethod(object $object, string $method): bool

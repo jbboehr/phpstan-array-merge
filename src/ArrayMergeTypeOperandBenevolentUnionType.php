@@ -27,6 +27,7 @@ use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeCombinator;
+use PHPStan\Type\TypeUtils;
 use PHPStan\Type\UnionType;
 
 /**
@@ -55,10 +56,64 @@ final class ArrayMergeTypeOperandBenevolentUnionType extends BenevolentUnionType
             return $this;
         }
 
+        return $this->recombineTypes($types);
+    }
+
+    public function traverseSimultaneously(Type $right, callable $cb): Type
+    {
+        // PHPStan uses this traversal for too-wide diagnostics. Skipping an unresolved
+        // right side is conservative; traversing it can discard later specialization.
+        if (TypeUtils::containsTemplateType($right)) {
+            return $this;
+        }
+
+        $rightTypes = TypeUtils::flattenTypes($right);
+        $types = [];
+        $replace = false;
+
+        foreach ($this->getTypes() as $type) {
+            $candidates = [];
+
+            foreach ($rightTypes as $i => $rightType) {
+                if (!$type->isSuperTypeOf($rightType)->yes()) {
+                    continue;
+                }
+
+                $candidates[] = $rightType;
+                unset($rightTypes[$i]);
+            }
+
+            if ([] === $candidates) {
+                $types[] = $type;
+                continue;
+            }
+
+            $newType = $cb($type, TypeCombinator::union(...$candidates));
+            $types[] = $newType;
+            if ($newType !== $type) {
+                $replace = true;
+            }
+        }
+
+        return $replace ? $this->recombineTypes($types) : $this;
+    }
+
+    /** @param list<Type> $types */
+    private function recombineTypes(array $types): Type
+    {
+        if ([] === $types) {
+            return $this;
+        }
+
+        $types = array_map(
+            static fn(Type $type): Type => ArrayMergeType::normalizeUninhabitedArrays($type),
+            $types,
+        );
+
         $flattenedTypes = self::flattenOrdinaryUnions($types);
 
         foreach ($flattenedTypes as $type) {
-            if ($type instanceof UnionType && $type instanceof TemplateType) {
+            if (TypeUtils::containsTemplateType($type)) {
                 return new self($flattenedTypes);
             }
         }
