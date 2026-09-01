@@ -39,6 +39,8 @@ use PHPStan\Type\UnionType;
  */
 final class ArrayMergeTypeOperandUnionType extends UnionType
 {
+    use ArrayMergeTypeOperandUnionTraversalTrait;
+
     /** @var non-empty-list<Type> */
     private array $sourceTypes;
 
@@ -77,70 +79,19 @@ final class ArrayMergeTypeOperandUnionType extends UnionType
         return [] === $otherSourceTypes;
     }
 
-    public function traverse(callable $cb): Type
+    /** @return list<Type> */
+    protected function getOperandTypes(): array
     {
-        $types = [];
-        $replace = false;
+        return $this->sourceTypes;
+    }
 
-        foreach ($this->sourceTypes as $type) {
-            $newType = $cb($type);
-            $types[] = $newType;
-            if ($newType !== $type) {
-                $replace = true;
-            }
-        }
-
-        if (!$replace) {
+    /** @param list<Type> $types */
+    protected function recombineTypes(array $types): Type
+    {
+        if ([] === $types) {
             return $this;
         }
 
-        return $this->recombineTypes($types);
-    }
-
-    public function traverseSimultaneously(Type $right, callable $cb): Type
-    {
-        // PHPStan uses this traversal for too-wide diagnostics. Skipping an unresolved
-        // right side is conservative; traversing it can discard later specialization.
-        if (TypeUtils::containsTemplateType($right)) {
-            return $this;
-        }
-
-        $rightTypes = TypeUtils::flattenTypes($right);
-        $types = [];
-        $replace = false;
-
-        foreach ($this->sourceTypes as $type) {
-            $candidates = [];
-
-            foreach ($rightTypes as $i => $rightType) {
-                if (!$type->isSuperTypeOf($rightType)->yes()) {
-                    continue;
-                }
-
-                $candidates[] = $rightType;
-                unset($rightTypes[$i]);
-            }
-
-            if ([] === $candidates) {
-                $types[] = $type;
-                continue;
-            }
-
-            $newType = $cb($type, TypeCombinator::union(...$candidates));
-            $types[] = $newType;
-            if ($newType !== $type) {
-                $replace = true;
-            }
-        }
-
-        return $replace ? $this->recombineTypes($types) : $this;
-    }
-
-    /**
-     * @param non-empty-list<Type> $types
-     */
-    private function recombineTypes(array $types): Type
-    {
         $types = array_map(
             static fn(Type $type): Type => ArrayMergeType::normalizeUninhabitedArrays($type),
             $types,
@@ -213,26 +164,5 @@ final class ArrayMergeTypeOperandUnionType extends UnionType
         }
 
         return null;
-    }
-
-    /**
-     * @param list<Type> $types
-     * @return list<Type>
-     */
-    private static function flattenOrdinaryUnions(array $types): array
-    {
-        $flattenedTypes = [];
-
-        foreach ($types as $type) {
-            if ($type instanceof UnionType && !($type instanceof TemplateType)) {
-                foreach ($type->getTypes() as $innerType) {
-                    $flattenedTypes[] = $innerType;
-                }
-            } else {
-                $flattenedTypes[] = $type;
-            }
-        }
-
-        return $flattenedTypes;
     }
 }

@@ -23,33 +23,22 @@ use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
 use PHPStan\Analyser\NameScope;
 use PHPStan\PhpDoc\TypeStringResolver;
 use PHPStan\PhpDocParser\Printer\Printer;
-use PHPStan\Testing\PHPStanTestCase;
 use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\BooleanType;
 use PHPStan\Type\Constant\ConstantArrayType;
 use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\Constant\ConstantStringType;
 use PHPStan\Type\ErrorType;
-use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Generic\TemplateTypeMap;
-use PHPStan\Type\Generic\TemplateTypeScope;
-use PHPStan\Type\Generic\TemplateTypeVariance;
-use PHPStan\Type\Generic\TemplateTypeVarianceMap;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\MixedType;
 use PHPStan\Type\NeverType;
 use PHPStan\Type\StringType;
-use PHPStan\Type\Type;
 use PHPStan\Type\VerbosityLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
 
-final class NestedOperandUnionTest extends PHPStanTestCase
+final class NestedOperandUnionTest extends TemplateTypeTestCase
 {
-    public static function getAdditionalConfigFiles(): array
-    {
-        return [__DIR__ . '/../extension.neon'];
-    }
-
     /**
      * @return iterable<string, array{string}>
      */
@@ -162,12 +151,8 @@ final class NestedOperandUnionTest extends PHPStanTestCase
         $this->assertFalse($forwardedControl->isResolvable());
         $this->assertFalse($forwardedWithImpossibleShape->isResolvable());
 
-        $resolveToBounds = new \ReflectionMethod(
-            'PHPStan\Type\Generic\TemplateTypeHelper',
-            'resolveToBounds',
-        );
-        $controlResult = $resolveToBounds->invoke(null, $forwardedControl);
-        $resultWithImpossibleShape = $resolveToBounds->invoke(null, $forwardedWithImpossibleShape);
+        $controlResult = $this->resolveToBounds($forwardedControl);
+        $resultWithImpossibleShape = $this->resolveToBounds($forwardedWithImpossibleShape);
         $this->assertInstanceOf(ArrayMergeType::class, $controlResult);
         $this->assertInstanceOf(ArrayMergeType::class, $resultWithImpossibleShape);
         $this->assertTrue($controlResult->resolve()->equals($resultWithImpossibleShape->resolve()));
@@ -566,40 +551,5 @@ final class NestedOperandUnionTest extends PHPStanTestCase
         $this->assertInstanceOf(ConstantArrayType::class, $actualValueType);
         $this->assertInstanceOf(BenevolentUnionType::class, $directValueType->getValueTypes()[0]);
         $this->assertInstanceOf(BenevolentUnionType::class, $actualValueType->getValueTypes()[0]);
-    }
-
-    private function createTemplate(string $functionName, string $name, Type $bound): TemplateType
-    {
-        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
-            ->invoke(null, $functionName);
-        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
-        $template = (new \ReflectionMethod('PHPStan\Type\Generic\TemplateTypeFactory', 'create'))->invoke(
-            null,
-            $scope,
-            $name,
-            $bound,
-            TemplateTypeVariance::createInvariant(),
-        );
-        $this->assertInstanceOf(TemplateType::class, $template);
-
-        return $template;
-    }
-
-    private function resolveTemplateTypes(Type $type, TemplateType $from, Type $to): Type
-    {
-        $resolveTemplateTypes = new \ReflectionMethod(
-            'PHPStan\Type\Generic\TemplateTypeHelper',
-            'resolveTemplateTypes',
-        );
-        $result = $resolveTemplateTypes->invoke(
-            null,
-            $type,
-            new TemplateTypeMap([$from->getName() => $to]),
-            TemplateTypeVarianceMap::createEmpty(),
-            TemplateTypeVariance::createInvariant(),
-        );
-        $this->assertInstanceOf(Type::class, $result);
-
-        return $result;
     }
 }

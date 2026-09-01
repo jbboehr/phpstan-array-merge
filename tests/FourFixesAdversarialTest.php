@@ -25,7 +25,6 @@ use jbboehr\PHPStan\ArrayMerge\ArrayMergeTypeOperandUnionType;
 use PHPStan\Analyser\NameScope;
 use PHPStan\PhpDoc\TypeStringResolver;
 use PHPStan\PhpDocParser\Printer\Printer;
-use PHPStan\Testing\PHPStanTestCase;
 use PHPStan\Type\Accessory\NonEmptyArrayType;
 use PHPStan\Type\ArrayType;
 use PHPStan\Type\BenevolentUnionType;
@@ -33,11 +32,7 @@ use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
 use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\Constant\ConstantStringType;
 use PHPStan\Type\ErrorType;
-use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Generic\TemplateTypeMap;
-use PHPStan\Type\Generic\TemplateTypeScope;
-use PHPStan\Type\Generic\TemplateTypeVariance;
-use PHPStan\Type\Generic\TemplateTypeVarianceMap;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\IntersectionType;
 use PHPStan\Type\MixedType;
@@ -51,13 +46,8 @@ use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
 
-final class FourFixesAdversarialTest extends PHPStanTestCase
+final class FourFixesAdversarialTest extends TemplateTypeTestCase
 {
-    public static function getAdditionalConfigFiles(): array
-    {
-        return [__DIR__ . '/../extension.neon'];
-    }
-
     /**
      * @return iterable<string, array{string, string}>
      */
@@ -198,10 +188,7 @@ final class FourFixesAdversarialTest extends PHPStanTestCase
         $this->assertInstanceOf(ArrayMergeType::class, $merge);
         $this->assertFalse($merge->isResolvable());
 
-        $resolvedToBounds = (new \ReflectionMethod(
-            'PHPStan\Type\Generic\TemplateTypeHelper',
-            'resolveToBounds',
-        ))->invoke(null, $merge);
+        $resolvedToBounds = $this->resolveToBounds($merge);
 
         $this->assertInstanceOf(ArrayMergeType::class, $resolvedToBounds);
         $this->assertInstanceOf(NeverType::class, $resolvedToBounds->resolve());
@@ -538,40 +525,6 @@ final class FourFixesAdversarialTest extends PHPStanTestCase
 
         $this->assertSame($wrapper, $result);
         $this->assertSame(0, $calls);
-    }
-
-    private function createTemplate(string $functionName, string $name, Type $bound): TemplateType
-    {
-        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
-            ->invoke(null, $functionName);
-        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
-        $template = (new \ReflectionMethod('PHPStan\Type\Generic\TemplateTypeFactory', 'create'))->invoke(
-            null,
-            $scope,
-            $name,
-            $bound,
-            TemplateTypeVariance::createInvariant(),
-        );
-        $this->assertInstanceOf(TemplateType::class, $template);
-
-        return $template;
-    }
-
-    private function resolveTemplateTypes(Type $type, TemplateType $from, Type $to): Type
-    {
-        $result = (new \ReflectionMethod(
-            'PHPStan\Type\Generic\TemplateTypeHelper',
-            'resolveTemplateTypes',
-        ))->invoke(
-            null,
-            $type,
-            new TemplateTypeMap([$from->getName() => $to]),
-            TemplateTypeVarianceMap::createEmpty(),
-            TemplateTypeVariance::createInvariant(),
-        );
-        $this->assertInstanceOf(Type::class, $result);
-
-        return $result;
     }
 
     private function containsIdenticalType(Type $type, Type $expected): bool

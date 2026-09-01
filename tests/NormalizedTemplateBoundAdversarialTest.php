@@ -22,25 +22,16 @@ namespace jbboehr\PHPStan\ArrayMerge\Tests;
 use jbboehr\PHPStan\ArrayMerge\ArrayMergeType;
 use PHPStan\Analyser\NameScope;
 use PHPStan\PhpDoc\TypeStringResolver;
-use PHPStan\Testing\PHPStanTestCase;
 use PHPStan\Type\ErrorType;
 use PHPStan\Type\Generic\TemplateType;
 use PHPStan\Type\Generic\TemplateTypeMap;
-use PHPStan\Type\Generic\TemplateTypeScope;
-use PHPStan\Type\Generic\TemplateTypeVariance;
-use PHPStan\Type\Generic\TemplateTypeVarianceMap;
 use PHPStan\Type\NeverType;
 use PHPStan\Type\Type;
 use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
 
-final class NormalizedTemplateBoundAdversarialTest extends PHPStanTestCase
+final class NormalizedTemplateBoundAdversarialTest extends TemplateTypeTestCase
 {
-    public static function getAdditionalConfigFiles(): array
-    {
-        return [__DIR__ . '/../extension.neon'];
-    }
-
     public function testNestedTemplateBoundCanBeSpecializedAfterPriorInference(): void
     {
         $resolver = self::getContainer()->getByType(TypeStringResolver::class);
@@ -254,40 +245,6 @@ final class NormalizedTemplateBoundAdversarialTest extends PHPStanTestCase
             $functionName,
             new TemplateTypeMap($templates),
         );
-    }
-
-    private function createTemplate(string $functionName, string $name, Type $bound): TemplateType
-    {
-        $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
-            ->invoke(null, $functionName);
-        $this->assertInstanceOf(TemplateTypeScope::class, $scope);
-        $template = (new \ReflectionMethod('PHPStan\Type\Generic\TemplateTypeFactory', 'create'))->invoke(
-            null,
-            $scope,
-            $name,
-            $bound,
-            TemplateTypeVariance::createInvariant(),
-        );
-        $this->assertInstanceOf(TemplateType::class, $template);
-
-        return $template;
-    }
-
-    private function resolveTemplateTypes(Type $type, TemplateType $from, Type $to): Type
-    {
-        $result = (new \ReflectionMethod(
-            'PHPStan\Type\Generic\TemplateTypeHelper',
-            'resolveTemplateTypes',
-        ))->invoke(
-            null,
-            $type,
-            new TemplateTypeMap([$from->getName() => $to]),
-            TemplateTypeVarianceMap::createEmpty(),
-            TemplateTypeVariance::createInvariant(),
-        );
-        $this->assertInstanceOf(Type::class, $result);
-
-        return $result;
     }
 
     private function assertTypeEquals(Type $expected, Type $actual): void
