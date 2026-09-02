@@ -117,11 +117,14 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
      */
     private static function expectedTypeForPhpStanRenderer(string $expectedType): string
     {
-        if (
-            'array{outer: array{removed?: never, kept: int, ...<string, bool>}}' === $expectedType
-            && !self::hasOptionalMethod(ConstantArrayTypeBuilder::createEmpty(), 'makeUnsealed')
-        ) {
-            return 'array{outer: array{kept: int}}';
+        if (!self::hasOptionalMethod(ConstantArrayTypeBuilder::createEmpty(), 'makeUnsealed')) {
+            $expectedType = match ($expectedType) {
+                'array{fixed: int, ...<string, string>}',
+                'array{fixed: string, ...<string, int>}' => 'non-empty-array<string, int|string>',
+                'array{outer: array{removed?: never, kept: int, ...<string, bool>}}' =>
+                    'array{outer: array{kept: int}}',
+                default => $expectedType,
+            };
         }
 
         if (str_starts_with($expectedType, 'list{') && self::usesArrayKeywordForListShapes()) {

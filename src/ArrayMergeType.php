@@ -41,6 +41,7 @@ use PHPStan\Type\IntegerType;
 use PHPStan\Type\LateResolvableType;
 use PHPStan\Type\MixedType;
 use PHPStan\Type\NeverType;
+use PHPStan\Type\StringType;
 use PHPStan\Type\Traits\LateResolvableTypeTrait;
 use PHPStan\Type\Traits\NonGeneralizableTypeTrait;
 use PHPStan\Type\Type;
@@ -286,6 +287,11 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             }
         }
 
+        $unsealedShape = self::mergeGenericStringArrayWithConstantShape($types);
+        if (null !== $unsealedShape) {
+            return $unsealedShape;
+        }
+
         if ($nConstantArrays + $nOtherArrays === count($types)) {
             $allIntegerKeys = true;
             $atLeastOneNonEmpty = false;
@@ -356,6 +362,63 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return new ArrayType(new MixedType(true), new MixedType(true));
+    }
+
+    /**
+     * @param non-empty-list<Type> $types
+     */
+    private static function mergeGenericStringArrayWithConstantShape(array $types): ?Type
+    {
+        if (2 !== count($types)) {
+            return null;
+        }
+
+        $genericArrays = $types[0]->getArrays();
+        $constantArrays = $types[1]->getConstantArrays();
+
+        if (
+            1 !== count($genericArrays)
+            || !$types[0]->equals($genericArrays[0])
+            || 1 !== count($constantArrays)
+            || !$types[1]->equals($constantArrays[0])
+        ) {
+            return null;
+        }
+
+        $genericArray = $genericArrays[0];
+        $constantArray = $constantArrays[0];
+
+        if (
+            !$genericArray->getKeyType()->equals(new StringType())
+            || self::hasUnknownExtraOffsets($constantArray)
+            || [] === $constantArray->getKeyTypes()
+            || [0] !== $constantArray->getNextAutoIndexes()
+        ) {
+            return null;
+        }
+
+        foreach ($constantArray->getKeyTypes() as $i => $keyType) {
+            $constantStrings = $keyType->getConstantStrings();
+
+            if (
+                1 !== count($constantStrings)
+                || !$keyType->equals($constantStrings[0])
+                || !$keyType->equals(self::normalizeArrayMergeKeyType($keyType))
+                || $constantArray->isOptionalKey($i)
+            ) {
+                return null;
+            }
+        }
+
+        $builder = ConstantArrayTypeBuilder::createFromConstantArray($constantArray);
+        $makeUnsealed = self::getOptionalMethod($builder, 'makeUnsealed');
+        if (null === $makeUnsealed) {
+            return null;
+        }
+
+        $makeUnsealed($genericArray->getKeyType(), $genericArray->getItemType());
+
+        return $builder->getArray();
     }
 
     private static function removeTopLevelNeverAlternatives(Type $type): Type

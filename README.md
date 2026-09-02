@@ -53,8 +53,6 @@ class ConstFixture
 \PHPStan\dumpType(ConstFixture::constMerge(['baz' => 'bat']));
 ```
 
-If you mix generic arrays and array shapes, you get what is coming to you (or open an issue).
-
 ## License
 
 This project is licensed under the [AGPL v3+](https://www.gnu.org/licenses/agpl-3.0) License - see the LICENSE.md file for details.

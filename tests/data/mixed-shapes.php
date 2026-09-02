@@ -8,7 +8,13 @@ use function PHPStan\Testing\assertType;
 assertType('non-empty-array<string, int|string>', $constantFirst);
 
 /** @phpstan-var array-merge<array<string, string>, array{fixed: int}> $constantLast */
-assertType('non-empty-array<string, int|string>', $constantLast);
+assertType('array{fixed: int, ...<string, string>}', $constantLast);
+
+/** @phpstan-var array-merge<array<string, int>, array{fixed: string}> $constantLastWithKnownOffset */
+assertType('array{fixed: string, ...<string, int>}', $constantLastWithKnownOffset);
+
+/** @phpstan-var array-merge<array<string, string>, array{fixed?: int}> $optionalConstantLast */
+assertType('array<string, int|string>', $optionalConstantLast);
 
 /** @phpstan-var array-merge<array{fixed?: int}, array<string, string>> $possiblyEmpty */
 assertType('array<string, int|string>', $possiblyEmpty);
