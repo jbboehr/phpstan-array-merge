@@ -158,9 +158,25 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         $nOtherArrays = 0;
         $hasUninhabitedArray = false;
         $types = [];
+        /** @var SplObjectStorage<Type, Type> $normalizedTypes */
+        $normalizedTypes = new SplObjectStorage();
+        /** @var SplObjectStorage<Type, true> $normalizingTypes */
+        $normalizingTypes = new SplObjectStorage();
+        /** @var SplObjectStorage<Type, true> $cycleDependentTypes */
+        $cycleDependentTypes = new SplObjectStorage();
 
         foreach ($this->types as $type) {
-            $type = self::normalizeUninhabitedArraysForInference($type);
+            $type = self::normalizeUninhabitedArraysWithMemo(
+                $type,
+                $normalizedTypes,
+                $normalizingTypes,
+                $cycleDependentTypes,
+                true,
+            );
+            foreach ($cycleDependentTypes as $cycleDependentType) {
+                unset($normalizedTypes[$cycleDependentType]);
+            }
+            $cycleDependentTypes->removeAll($cycleDependentTypes);
             $type = self::removeTopLevelNeverAlternatives($type);
 
             if ($type instanceof NeverType) {
@@ -381,41 +397,65 @@ class ArrayMergeType implements CompoundType, LateResolvableType
     {
         /** @var SplObjectStorage<Type, Type> $normalizedTypes */
         $normalizedTypes = new SplObjectStorage();
+        /** @var SplObjectStorage<Type, true> $normalizingTypes */
+        $normalizingTypes = new SplObjectStorage();
+        /** @var SplObjectStorage<Type, true> $cycleDependentTypes */
+        $cycleDependentTypes = new SplObjectStorage();
 
-        return self::normalizeUninhabitedArraysWithMemo($type, $normalizedTypes, false);
-    }
-
-    private static function normalizeUninhabitedArraysForInference(Type $type): Type
-    {
-        /** @var SplObjectStorage<Type, Type> $normalizedTypes */
-        $normalizedTypes = new SplObjectStorage();
-
-        return self::normalizeUninhabitedArraysWithMemo($type, $normalizedTypes, true);
+        return self::normalizeUninhabitedArraysWithMemo(
+            $type,
+            $normalizedTypes,
+            $normalizingTypes,
+            $cycleDependentTypes,
+            false,
+        );
     }
 
     /**
      * @param SplObjectStorage<Type, Type> $normalizedTypes
+     * @param SplObjectStorage<Type, true> $normalizingTypes
+     * @param SplObjectStorage<Type, true> $cycleDependentTypes
      */
     private static function normalizeUninhabitedArraysWithMemo(
         Type $type,
         SplObjectStorage $normalizedTypes,
+        SplObjectStorage $normalizingTypes,
+        SplObjectStorage $cycleDependentTypes,
         bool $useTemplateBounds,
     ): Type {
+        if (isset($normalizingTypes[$type])) {
+            foreach ($normalizingTypes as $normalizingType) {
+                $cycleDependentTypes[$normalizingType] = true;
+            }
+
+            return $type;
+        }
+
         if (isset($normalizedTypes[$type])) {
+            if (isset($cycleDependentTypes[$type])) {
+                foreach ($normalizingTypes as $normalizingType) {
+                    $cycleDependentTypes[$normalizingType] = true;
+                }
+            }
+
             return $normalizedTypes[$type];
         }
 
         // Break cycles conservatively while this node is being normalized.
         $normalizedTypes[$type] = $type;
+        $normalizingTypes[$type] = true;
 
         if ($type instanceof TemplateType) {
             $bound = self::normalizeUninhabitedArraysWithMemo(
                 $type->getBound(),
                 $normalizedTypes,
+                $normalizingTypes,
+                $cycleDependentTypes,
                 $useTemplateBounds,
             );
             $result = $bound instanceof NeverType || $useTemplateBounds ? $bound : $type;
             $normalizedTypes[$type] = $result;
+            unset($normalizingTypes[$type]);
 
             return $result;
         }
@@ -425,11 +465,14 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 self::normalizeUninhabitedArraysWithMemo(
                     $innerType,
                     $normalizedTypes,
+                    $normalizingTypes,
+                    $cycleDependentTypes,
                     $useTemplateBounds,
                 ),
         );
         $result = self::normalizeTraversedUninhabitedArray($traversedType);
         $normalizedTypes[$type] = $result;
+        unset($normalizingTypes[$type]);
 
         return $result;
     }

@@ -821,6 +821,312 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
         $this->assertSame($template, ArrayMergeType::normalizeUninhabitedArrays($template));
     }
 
+    public function testInferenceNormalizationVisitsSharedGraphsOnceAcrossOperands(): void
+    {
+        $leaf = $this->createMock(Type::class);
+        $leaf->expects(self::once())->method('traverse')->willReturnSelf();
+        $leaf->method('isArray')->willReturn(TrinaryLogic::createNo());
+
+        $leftBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $leftBuilder->setOffsetValueType(new ConstantStringType('left'), $leaf);
+        $rightBuilder = ConstantArrayTypeBuilder::createEmpty();
+        $rightBuilder->setOffsetValueType(new ConstantStringType('right'), $leaf);
+
+        $result = (new ArrayMergeType([
+            $leftBuilder->getArray(),
+            $rightBuilder->getArray(),
+        ]))->resolve();
+
+        $this->assertInstanceOf(ConstantArrayType::class, $result);
+    }
+
+    public function testInferenceNormalizationIsIndependentForSharedCyclicOperandRoots(): void
+    {
+        $leftRootResult = new ConstantArrayType(
+            [new ConstantStringType('left')],
+            [new ConstantStringType('root')],
+        );
+        $leftCycleResult = new ConstantArrayType(
+            [new ConstantStringType('left')],
+            [new ConstantStringType('cycle')],
+        );
+        $rightRootResult = new ConstantArrayType(
+            [new ConstantStringType('right')],
+            [new ConstantStringType('root')],
+        );
+        $rightCycleResult = new ConstantArrayType(
+            [new ConstantStringType('right')],
+            [new ConstantStringType('cycle')],
+        );
+
+        $leftRoot = $this->createMock(Type::class);
+        $rightRoot = $this->createMock(Type::class);
+        $leftRoot->method('traverse')->willReturnCallback(
+            static function (callable $cb) use (
+                $rightRoot,
+                $leftRootResult,
+                $leftCycleResult,
+            ): Type {
+                return $cb($rightRoot) === $rightRoot ? $leftCycleResult : $leftRootResult;
+            },
+        );
+        $rightRoot->method('traverse')->willReturnCallback(
+            static function (callable $cb) use (
+                $leftRoot,
+                $rightRootResult,
+                $rightCycleResult,
+            ): Type {
+                return $cb($leftRoot) === $leftRoot ? $rightCycleResult : $rightRootResult;
+            },
+        );
+
+        $expected = (new ArrayMergeType([
+            ArrayMergeType::normalizeUninhabitedArrays($leftRoot),
+            ArrayMergeType::normalizeUninhabitedArrays($rightRoot),
+        ]))->resolve();
+        $actual = (new ArrayMergeType([$leftRoot, $rightRoot]))->resolve();
+
+        $this->assertTrue($expected->equals($actual), sprintf(
+            'Expected independent normalization to resolve to %s, got %s',
+            $expected->describe(VerbosityLevel::precise()),
+            $actual->describe(VerbosityLevel::precise()),
+        ));
+
+        $reverseExpected = (new ArrayMergeType([
+            ArrayMergeType::normalizeUninhabitedArrays($rightRoot),
+            ArrayMergeType::normalizeUninhabitedArrays($leftRoot),
+        ]))->resolve();
+        $reverseActual = (new ArrayMergeType([$rightRoot, $leftRoot]))->resolve();
+
+        $this->assertTrue($reverseExpected->equals($reverseActual), sprintf(
+            'Expected reverse independent normalization to resolve to %s, got %s',
+            $reverseExpected->describe(VerbosityLevel::precise()),
+            $reverseActual->describe(VerbosityLevel::precise()),
+        ));
+    }
+
+    public function testInferenceNormalizationCachesCycleIndependentSharedSiblingAcrossOperands(): void
+    {
+        $sharedLeaf = $this->createMock(Type::class);
+        $sharedLeaf->expects(self::once())->method('traverse')->willReturnSelf();
+        $sharedLeaf->method('isArray')->willReturn(TrinaryLogic::createNo());
+
+        $leftCycle = $this->createMock(Type::class);
+        $rightCycle = $this->createMock(Type::class);
+        $leftCycle->method('traverse')->willReturnCallback(
+            static function (callable $cb) use ($rightCycle): Type {
+                $cb($rightCycle);
+
+                return new StringType();
+            },
+        );
+        $rightCycle->method('traverse')->willReturnCallback(
+            static function (callable $cb) use ($leftCycle): Type {
+                $cb($leftCycle);
+
+                return new IntegerType();
+            },
+        );
+
+        $cyclicResult = new ConstantArrayType(
+            [new ConstantStringType('cycle')],
+            [new StringType()],
+        );
+        $siblingResult = new ConstantArrayType(
+            [new ConstantStringType('sibling')],
+            [new IntegerType()],
+        );
+        $cyclicOperand = $this->createMock(Type::class);
+        $cyclicOperand->method('traverse')->willReturnCallback(
+            static function (callable $cb) use ($leftCycle, $sharedLeaf, $cyclicResult): Type {
+                $cb($leftCycle);
+                $cb($sharedLeaf);
+
+                return $cyclicResult;
+            },
+        );
+        $siblingOperand = $this->createMock(Type::class);
+        $siblingOperand->method('traverse')->willReturnCallback(
+            static function (callable $cb) use ($sharedLeaf, $siblingResult): Type {
+                $cb($sharedLeaf);
+
+                return $siblingResult;
+            },
+        );
+
+        $result = (new ArrayMergeType([
+            $cyclicOperand,
+            $siblingOperand,
+        ]))->resolve();
+
+        $this->assertInstanceOf(ConstantArrayType::class, $result);
+    }
+
+    public function testInferenceNormalizationPropagatesTransitiveCycleDependence(): void
+    {
+        $leftCycleResult = new ConstantStringType('left-cycle');
+        $leftRootResult = new ConstantStringType('left-root');
+        $rightCycleResult = new ConstantStringType('right-cycle');
+        $rightRootResult = new ConstantStringType('right-root');
+        $contaminatedResult = new ConstantArrayType(
+            [new ConstantStringType('dependent')],
+            [new ConstantStringType('cycle')],
+        );
+        $isolatedResult = new ConstantArrayType(
+            [new ConstantStringType('dependent')],
+            [new ConstantStringType('root')],
+        );
+        $prefixResult = new ConstantArrayType(
+            [new ConstantStringType('prefix')],
+            [new BooleanType()],
+        );
+
+        $left = $this->createMock(Type::class);
+        $right = $this->createMock(Type::class);
+        $left->method('traverse')->willReturnCallback(
+            static fn(callable $cb): Type => $cb($right) === $right
+                ? $leftCycleResult
+                : $leftRootResult,
+        );
+        $right->method('traverse')->willReturnCallback(
+            static fn(callable $cb): Type => $cb($left) === $left
+                ? $rightCycleResult
+                : $rightRootResult,
+        );
+        $dependent = $this->createMock(Type::class);
+        $dependent->method('traverse')->willReturnCallback(
+            static fn(callable $cb): Type => $cb($right) === $rightCycleResult
+                ? $contaminatedResult
+                : $isolatedResult,
+        );
+        $prefix = $this->createMock(Type::class);
+        $prefix->method('traverse')->willReturnCallback(
+            static function (callable $cb) use ($left, $dependent, $prefixResult): Type {
+                $cb($left);
+                $cb($dependent);
+
+                return $prefixResult;
+            },
+        );
+
+        $expected = (new ArrayMergeType([
+            ArrayMergeType::normalizeUninhabitedArrays($prefix),
+            ArrayMergeType::normalizeUninhabitedArrays($dependent),
+        ]))->resolve();
+        $actual = (new ArrayMergeType([$prefix, $dependent]))->resolve();
+
+        $this->assertTrue($expected->equals($actual), sprintf(
+            'Expected independent normalization to resolve to %s, got %s',
+            $expected->describe(VerbosityLevel::precise()),
+            $actual->describe(VerbosityLevel::precise()),
+        ));
+    }
+
+    public function testInferenceNormalizationPurgesMultiHopCycleDependentsInEitherOperandOrder(): void
+    {
+        $buildOperands = function (): array {
+            $leftCycleResult = new ConstantStringType('left-cycle');
+            $leftRootResult = new ConstantStringType('left-root');
+            $rightCycleResult = new ConstantStringType('right-cycle');
+            $rightRootResult = new ConstantStringType('right-root');
+            $firstContaminatedResult = new ConstantStringType('cycle-1');
+            $firstIsolatedResult = new ConstantStringType('root-1');
+            $secondContaminatedResult = new ConstantArrayType(
+                [new ConstantStringType('dependent')],
+                [new ConstantStringType('cycle-2')],
+            );
+            $secondIsolatedResult = new ConstantArrayType(
+                [new ConstantStringType('dependent')],
+                [new ConstantStringType('root-2')],
+            );
+            $prefixResult = new ConstantArrayType(
+                [new ConstantStringType('prefix')],
+                [new BooleanType()],
+            );
+
+            $safeSibling = $this->createMock(Type::class);
+            $safeSibling->expects(self::once())->method('traverse')->willReturnSelf();
+            $safeSibling->method('isArray')->willReturn(TrinaryLogic::createNo());
+
+            $left = $this->createMock(Type::class);
+            $right = $this->createMock(Type::class);
+            $left->method('traverse')->willReturnCallback(
+                static fn(callable $cb): Type => $cb($right) === $right
+                    ? $leftCycleResult
+                    : $leftRootResult,
+            );
+            $right->method('traverse')->willReturnCallback(
+                static fn(callable $cb): Type => $cb($left) === $left
+                    ? $rightCycleResult
+                    : $rightRootResult,
+            );
+            $firstDependent = $this->createMock(Type::class);
+            $firstDependent->method('traverse')->willReturnCallback(
+                static fn(callable $cb): Type => $cb($right) === $rightCycleResult
+                    ? $firstContaminatedResult
+                    : $firstIsolatedResult,
+            );
+            $secondDependent = $this->createMock(Type::class);
+            $secondDependent->method('traverse')->willReturnCallback(
+                static function (callable $cb) use (
+                    $safeSibling,
+                    $firstDependent,
+                    $firstContaminatedResult,
+                    $secondContaminatedResult,
+                    $secondIsolatedResult,
+                ): Type {
+                    $cb($safeSibling);
+
+                    return $cb($firstDependent) === $firstContaminatedResult
+                        ? $secondContaminatedResult
+                        : $secondIsolatedResult;
+                },
+            );
+            $prefix = $this->createMock(Type::class);
+            $prefix->method('traverse')->willReturnCallback(
+                static function (callable $cb) use (
+                    $safeSibling,
+                    $left,
+                    $firstDependent,
+                    $secondDependent,
+                    $prefixResult,
+                ): Type {
+                    $cb($safeSibling);
+                    $cb($left);
+                    $cb($firstDependent);
+                    $cb($secondDependent);
+                    $cb($secondDependent);
+
+                    return $prefixResult;
+                },
+            );
+
+            return [$prefix, $secondDependent];
+        };
+
+        foreach ([false, true] as $reverse) {
+            [$prefix, $dependent] = $buildOperands();
+            $actual = (new ArrayMergeType(
+                $reverse ? [$dependent, $prefix] : [$prefix, $dependent],
+            ))->resolve();
+            $expected = new ConstantArrayType(
+                $reverse
+                    ? [new ConstantStringType('dependent'), new ConstantStringType('prefix')]
+                    : [new ConstantStringType('prefix'), new ConstantStringType('dependent')],
+                $reverse
+                    ? [new ConstantStringType('root-2'), new BooleanType()]
+                    : [new BooleanType(), new ConstantStringType('root-2')],
+            );
+
+            $this->assertTrue($expected->equals($actual), sprintf(
+                'Expected %s operand order to resolve to %s, got %s',
+                $reverse ? 'reverse' : 'forward',
+                $expected->describe(VerbosityLevel::precise()),
+                $actual->describe(VerbosityLevel::precise()),
+            ));
+        }
+    }
+
     public function testUninhabitedArrayNormalizationPreservesViableTemplateIdentity(): void
     {
         $scope = (new \ReflectionMethod(TemplateTypeScope::class, 'createWithFunction'))
