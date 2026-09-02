@@ -122,10 +122,12 @@ jobs:
             phpstan-constraint: "1.12.1"
             phpstan-phpunit-constraint: "^1.4.2"
             phpstan-strict-rules-constraint: "1.5.2"
+            php-parser-constraint: "^4.19.5"
           - phpstan-version: "2.0.4"
             phpstan-constraint: "2.0.4"
             phpstan-phpunit-constraint: "2.0.6"
             phpstan-strict-rules-constraint: "2.0.4"
+            php-parser-constraint: "^5.8"
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -152,7 +154,7 @@ jobs:
             composer-${{ runner.os }}-${{ runner.arch }}-php-8.1-phpstan-${{ matrix.phpstan-version }}-
 
       - name: Install compatibility dependencies
-        run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies phpstan/phpstan:${{ matrix.phpstan-constraint }} phpstan/phpstan-phpunit:${{ matrix.phpstan-phpunit-constraint }} phpstan/phpstan-strict-rules:${{ matrix.phpstan-strict-rules-constraint }}
+        run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies phpstan/phpstan:${{ matrix.phpstan-constraint }} phpstan/phpstan-phpunit:${{ matrix.phpstan-phpunit-constraint }} phpstan/phpstan-strict-rules:${{ matrix.phpstan-strict-rules-constraint }} nikic/php-parser:${{ matrix.php-parser-constraint }}
 
       - name: Run test suite
         run: composer phpunit -- --no-coverage

@@ -29,6 +29,8 @@ includes:
 Have you ever wanted to have a function that performs an `array_merge()`-like operation but want that generic goodness
 PHPStan has to offer? **WAIT NO MORE!**
 
+<!-- akashi: compile-only -->
+
 ```php
 <?php
 
@@ -46,31 +48,9 @@ class ConstFixture
         return array_merge(self::ARRAY, $a);
     }
 }
-```
 
-Each `array-merge` type argument must be statically known to be an array. Bind
-templates to an array type, as in `@template T of array<mixed>` above. Unknown
-operands such as `mixed`, and unions that include a non-array type such as
-`array<int, string>|int`, are errors instead of silently discarding non-array
-possibilities. In direct type contexts they resolve to `*ERROR*`; in PHPDoc
-declarations PHPStan reports the invalid declaration and may use its native type
-as a fallback at downstream call sites. This is an intentional pre-1.0
-tightening of the operand contract.
-
-```php
-<?php
-
+// @akashi-phpstan-error phpstan.dumpType: array{foo: 'bar', baz: 'bat'}
 \PHPStan\dumpType(ConstFixture::constMerge(['baz' => 'bat']));
-```
-
-```console
-$ phpstan
-
- ------ --------------------------------------------
-  Line   tmp.php
- ------ --------------------------------------------
-  3      Dumped type: array{foo: 'bar', baz: 'bat'}
- ------ --------------------------------------------
 ```
 
 If you mix generic arrays and array shapes, you get what is coming to you (or open an issue).
