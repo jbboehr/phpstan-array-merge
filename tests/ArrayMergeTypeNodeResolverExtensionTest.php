@@ -121,6 +121,8 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
             $expectedType = match ($expectedType) {
                 'array{fixed: int, ...<string, string>}',
                 'array{fixed: string, ...<string, int>}' => 'non-empty-array<string, int|string>',
+                'array{first: string, second: bool, ...<string, int>}',
+                'array{fixed: bool, ...<string, int>}' => 'non-empty-array<string, bool|int|string>',
                 'array{outer: array{removed?: never, kept: int, ...<string, bool>}}' =>
                     'array{outer: array{kept: int}}',
                 default => $expectedType,

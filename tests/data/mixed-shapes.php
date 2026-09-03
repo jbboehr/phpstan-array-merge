@@ -13,6 +13,12 @@ assertType('array{fixed: int, ...<string, string>}', $constantLast);
 /** @phpstan-var array-merge<array<string, int>, array{fixed: string}> $constantLastWithKnownOffset */
 assertType('array{fixed: string, ...<string, int>}', $constantLastWithKnownOffset);
 
+/** @phpstan-var array-merge<array<string, int>, array{first: string}, array{second: bool}> $multipleConstantsLast */
+assertType('array{first: string, second: bool, ...<string, int>}', $multipleConstantsLast);
+
+/** @phpstan-var array-merge<array<string, int>, array{fixed: string}, array{fixed: bool}> $multipleConstantsLastWriteWins */
+assertType('array{fixed: bool, ...<string, int>}', $multipleConstantsLastWriteWins);
+
 /** @phpstan-var array-merge<array<string, string>, array{fixed?: int}> $optionalConstantLast */
 assertType('array<string, int|string>', $optionalConstantLast);
 

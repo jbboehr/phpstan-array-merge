@@ -287,7 +287,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
             }
         }
 
-        $unsealedShape = self::mergeGenericStringArrayWithConstantShape($types);
+        $unsealedShape = self::mergeGenericStringArrayWithConstantShapes($types);
         if (null !== $unsealedShape) {
             return $unsealedShape;
         }
@@ -367,55 +367,86 @@ class ArrayMergeType implements CompoundType, LateResolvableType
     /**
      * @param non-empty-list<Type> $types
      */
-    private static function mergeGenericStringArrayWithConstantShape(array $types): ?Type
+    private static function mergeGenericStringArrayWithConstantShapes(array $types): ?Type
     {
-        if (2 !== count($types)) {
+        if (count($types) < 2) {
             return null;
         }
 
         $genericArrays = $types[0]->getArrays();
-        $constantArrays = $types[1]->getConstantArrays();
 
         if (
             1 !== count($genericArrays)
             || !$types[0]->equals($genericArrays[0])
-            || 1 !== count($constantArrays)
-            || !$types[1]->equals($constantArrays[0])
         ) {
             return null;
         }
 
         $genericArray = $genericArrays[0];
-        $constantArray = $constantArrays[0];
 
-        if (
-            !$genericArray->getKeyType()->equals(new StringType())
-            || self::hasUnknownExtraOffsets($constantArray)
-            || [] === $constantArray->getKeyTypes()
-            || [0] !== $constantArray->getNextAutoIndexes()
-        ) {
+        if (!$genericArray->getKeyType()->equals(new StringType())) {
             return null;
         }
 
-        foreach ($constantArray->getKeyTypes() as $i => $keyType) {
-            $constantStrings = $keyType->getConstantStrings();
+        $keyTypes = [];
+        $valueTypes = [];
+        /** @var array<string, int> $keyIndexes */
+        $keyIndexes = [];
+
+        for ($typeIndex = 1, $typeCount = count($types); $typeIndex < $typeCount; $typeIndex++) {
+            $operandConstantArrays = $types[$typeIndex]->getConstantArrays();
 
             if (
-                1 !== count($constantStrings)
-                || !$keyType->equals($constantStrings[0])
-                || !$keyType->equals(self::normalizeArrayMergeKeyType($keyType))
-                || $constantArray->isOptionalKey($i)
+                1 !== count($operandConstantArrays)
+                || !$types[$typeIndex]->equals($operandConstantArrays[0])
             ) {
                 return null;
             }
+
+            $constantArray = $operandConstantArrays[0];
+
+            if (
+                self::hasUnknownExtraOffsets($constantArray)
+                || [] === $constantArray->getKeyTypes()
+                || [0] !== $constantArray->getNextAutoIndexes()
+            ) {
+                return null;
+            }
+
+            foreach ($constantArray->getKeyTypes() as $i => $keyType) {
+                $constantStrings = $keyType->getConstantStrings();
+
+                if (
+                    1 !== count($constantStrings)
+                    || !$keyType->equals($constantStrings[0])
+                    || !$keyType->equals(self::normalizeArrayMergeKeyType($keyType))
+                    || $constantArray->isOptionalKey($i)
+                ) {
+                    return null;
+                }
+
+                $keyValue = $constantStrings[0]->getValue();
+                if (isset($keyIndexes[$keyValue])) {
+                    $valueTypes[$keyIndexes[$keyValue]] = $constantArray->getValueTypes()[$i];
+                    continue;
+                }
+
+                $keyIndexes[$keyValue] = count($keyTypes);
+                $keyTypes[] = $keyType;
+                $valueTypes[] = $constantArray->getValueTypes()[$i];
+            }
         }
 
-        $builder = ConstantArrayTypeBuilder::createFromConstantArray($constantArray);
+        $builder = ConstantArrayTypeBuilder::createFromConstantArray(
+            new ConstantArrayType($keyTypes, $valueTypes),
+        );
         $makeUnsealed = self::getOptionalMethod($builder, 'makeUnsealed');
-        if (null === $makeUnsealed) {
+        $disableArrayDegradation = self::getOptionalMethod($builder, 'disableArrayDegradation');
+        if (null === $makeUnsealed || null === $disableArrayDegradation) {
             return null;
         }
 
+        $disableArrayDegradation();
         $makeUnsealed($genericArray->getKeyType(), $genericArray->getItemType());
 
         return $builder->getArray();
