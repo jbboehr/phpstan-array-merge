@@ -2,22 +2,32 @@
 
 namespace jbboehr\PHPStan\ArrayMerge\Tests\Data;
 
+use function array_flip;
+use function array_values;
 use function PHPStan\Testing\assertType;
 
 /** @phpstan-var array-merge<array{fixed: int}, array<string, string>> $constantFirst */
 assertType('non-empty-array<string, int|string>', $constantFirst);
 
 /** @phpstan-var array-merge<array<string, string>, array{fixed: int}> $constantLast */
-assertType('array{fixed: int, ...<string, string>}', $constantLast);
+assertType('non-empty-array<string, int|string>', $constantLast);
 
 /** @phpstan-var array-merge<array<string, int>, array{fixed: string}> $constantLastWithKnownOffset */
-assertType('array{fixed: string, ...<string, int>}', $constantLastWithKnownOffset);
+assertType('non-empty-array<string, int|string>', $constantLastWithKnownOffset);
+assertType('int|string', array_values($constantLastWithKnownOffset)[0]);
+
+/** @phpstan-var array-merge<array<string, int>, array<string, bool>, array{fixed: string}> $multipleGenericArraysFirst */
+assertType('non-empty-array<string, bool|int|string>', $multipleGenericArraysFirst);
+assertType('bool|int|string', array_values($multipleGenericArraysFirst)[0]);
 
 /** @phpstan-var array-merge<array<string, int>, array{first: string}, array{second: bool}> $multipleConstantsLast */
-assertType('array{first: string, second: bool, ...<string, int>}', $multipleConstantsLast);
+assertType('non-empty-array<string, bool|int|string>', $multipleConstantsLast);
 
 /** @phpstan-var array-merge<array<string, int>, array{fixed: string}, array{fixed: bool}> $multipleConstantsLastWriteWins */
-assertType('array{fixed: bool, ...<string, int>}', $multipleConstantsLastWriteWins);
+assertType('non-empty-array<string, bool|int|string>', $multipleConstantsLastWriteWins);
+
+/** @phpstan-var array-merge<array<string, string>, array{fixed: 'x'}> $constantValueLast */
+assertType('non-empty-array<string, string>', array_flip($constantValueLast));
 
 /** @phpstan-var array-merge<array<string, string>, array{fixed?: int}> $optionalConstantLast */
 assertType('array<string, int|string>', $optionalConstantLast);

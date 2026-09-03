@@ -34,9 +34,9 @@ use PHPStan\Type\IntegerType;
 use PHPStan\Type\IntersectionType;
 use PHPStan\Type\StringType;
 use PHPStan\Type\Type;
+use PHPStan\Type\TypeCombinator;
 use PHPStan\Type\UnionType;
 use PHPStan\Type\VerbosityLevel;
-use function array_keys;
 use function array_map;
 use function array_merge;
 use function is_bool;
@@ -54,7 +54,7 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
         self::getContainer();
     }
 
-    public function testRetainedShapeUsesLastWinsAndAcceptsNonCanonicalIntegerStringKeys(): void
+    public function testGenericPrefixWithTrailingShapeUsesConservativeFallback(): void
     {
         $fixedKey = new ConstantStringType('fixed');
         $nonCanonicalIntegerStringKey = new ConstantStringType('08');
@@ -68,23 +68,17 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
             $shape,
         ]))->resolve();
 
-        if (!self::supportsUnsealedShapes()) {
-            $this->assertSame([], $result->getConstantArrays());
-            return;
-        }
-
-        $constantArrays = $result->getConstantArrays();
-        $this->assertCount(1, $constantArrays);
-        $this->assertTrue($result->equals($constantArrays[0]));
-        $this->assertTrue($constantArrays[0]->hasOffsetValueType($fixedKey)->yes());
-        $this->assertTrue((new StringType())->equals($constantArrays[0]->getOffsetValueType($fixedKey)));
-        $this->assertTrue($constantArrays[0]->hasOffsetValueType($nonCanonicalIntegerStringKey)->yes());
-        $this->assertTrue((new BooleanType())->equals(
-            $constantArrays[0]->getOffsetValueType($nonCanonicalIntegerStringKey),
-        ));
-        $this->assertTrue((new IntegerType())->equals(
-            $constantArrays[0]->getOffsetValueType(new ConstantStringType('dynamic')),
-        ));
+        $this->assertSame([], $result->getConstantArrays());
+        $expectedItemType = TypeCombinator::union(
+            new BooleanType(),
+            new IntegerType(),
+            new StringType(),
+        );
+        $this->assertTrue($result->hasOffsetValueType($fixedKey)->maybe());
+        $this->assertTrue($expectedItemType->equals($result->getOffsetValueType($fixedKey)));
+        $this->assertTrue($result->hasOffsetValueType($nonCanonicalIntegerStringKey)->maybe());
+        $this->assertTrue($expectedItemType->equals($result->getOffsetValueType($nonCanonicalIntegerStringKey)));
+        $this->assertTrue($expectedItemType->equals($result->getOffsetValueType(new ConstantStringType('dynamic'))));
 
         $runtimeOutcome = self::constantArrayFromRuntime([
             'fixed' => 'winner',
@@ -97,6 +91,27 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
                 'Inferred %s must contain representative last-wins result %s.',
                 $result->describe(VerbosityLevel::precise()),
                 $runtimeOutcome->describe(VerbosityLevel::precise()),
+            ),
+        );
+    }
+
+    public function testArrayFlipDoesNotAssumeWhichDuplicateValueWins(): void
+    {
+        $result = (new ArrayMergeType([
+            new ArrayType(new StringType(), new StringType()),
+            new ConstantArrayType(
+                [new ConstantStringType('fixed')],
+                [new ConstantStringType('x')],
+            ),
+        ]))->resolve();
+        $nativeOutcome = self::constantArrayFromRuntime(['x' => 'later']);
+
+        $this->assertTrue(
+            $result->flipArray()->isSuperTypeOf($nativeOutcome)->yes(),
+            sprintf(
+                'Flipped inferred type %s must contain the native duplicate-value outcome %s.',
+                $result->flipArray()->describe(VerbosityLevel::precise()),
+                $nativeOutcome->describe(VerbosityLevel::precise()),
             ),
         );
     }
@@ -257,7 +272,7 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
         }
     }
 
-    public function testMultipleTrailingShapesRetainKnownOffsetsAtBuilderBoundary(): void
+    public function testLargeTrailingShapesUseConservativeFallback(): void
     {
         $firstShapeKeyTypes = [];
         $firstShapeValueTypes = [];
@@ -276,32 +291,16 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
             ),
         ]))->resolve();
 
-        if (!self::supportsUnsealedShapes()) {
-            $this->assertSame([], $result->getConstantArrays());
-            return;
-        }
-
-        $constantArrays = $result->getConstantArrays();
-        $this->assertCount(
-            1,
-            $constantArrays,
-            sprintf(
-                'All eligible trailing-shape offsets must remain known when their combined size crosses 256; got %s.',
-                $result->describe(VerbosityLevel::precise()),
-            ),
-        );
-        $this->assertCount(257, $constantArrays[0]->getKeyTypes());
-        $this->assertSame('first0', $constantArrays[0]->getKeyTypes()[0]->getValue());
-        $this->assertSame('last', $constantArrays[0]->getKeyTypes()[256]->getValue());
-        $this->assertTrue($constantArrays[0]->hasOffsetValueType(new ConstantStringType('first0'))->yes());
-        $this->assertTrue((new ConstantStringType('overwritten'))->equals(
-            $constantArrays[0]->getOffsetValueType(new ConstantStringType('first0')),
-        ));
-        $this->assertTrue($constantArrays[0]->hasOffsetValueType(new ConstantStringType('first255'))->yes());
-        $this->assertTrue($constantArrays[0]->hasOffsetValueType(new ConstantStringType('last'))->yes());
+        $this->assertSame([], $result->getConstantArrays());
+        $this->assertTrue(TypeCombinator::union(
+            new IntegerType(),
+            new ConstantStringType('overwritten'),
+            new ConstantStringType('tail'),
+        )->equals($result->getIterableValueType()));
+        $this->assertTrue($result->hasOffsetValueType(new ConstantStringType('first0'))->maybe());
     }
 
-    public function testMultipleTrailingShapesMatchNativeOverwriteAndInsertionOrder(): void
+    public function testMultipleTrailingShapesRemainBroadAndContainNativeOutcome(): void
     {
         $runtimeShapes = [
             ['first' => 'left', '08' => 'leading zero', 'shared' => 'first value', 'middle' => 1],
@@ -328,36 +327,15 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
             ),
         );
 
-        if (!self::supportsUnsealedShapes()) {
-            $this->assertSame([], $result->getConstantArrays());
-            return;
-        }
+        $this->assertSame([], $result->getConstantArrays());
 
-        $constantArrays = $result->getConstantArrays();
-        $this->assertCount(1, $constantArrays);
-        $actualKnownKeys = array_map(
-            static fn(ConstantIntegerType|ConstantStringType $keyType): int|string => $keyType->getValue(),
-            $constantArrays[0]->getKeyTypes(),
-        );
-        $nativeKnownKeys = array_keys(array_merge(...$runtimeShapes));
-        $this->assertSame($nativeKnownKeys, $actualKnownKeys);
-
-        $expectedKnownOffsets = self::constantArrayFromRuntime(array_merge(...$runtimeShapes));
-        $expectedConstantArrays = $expectedKnownOffsets->getConstantArrays();
-        $this->assertCount(1, $expectedConstantArrays);
-
-        foreach ($expectedConstantArrays[0]->getKeyTypes() as $keyType) {
-            $this->assertTrue(
-                $expectedConstantArrays[0]->getOffsetValueType($keyType)->equals(
-                    $constantArrays[0]->getOffsetValueType($keyType),
-                ),
-                sprintf('Known offset %s must have the native last-writer value type.', $keyType->getValue()),
-            );
-        }
-
-        $this->assertTrue((new IntegerType())->equals(
-            $constantArrays[0]->getOffsetValueType(new ConstantStringType('dynamic')),
-        ));
+        $this->assertTrue(TypeCombinator::union(
+            new BooleanType(),
+            new IntegerType(),
+            new StringType(),
+        )->isSuperTypeOf(
+            $result->getIterableValueType(),
+        )->yes());
     }
 
     public function testDisqualifiedThirdOperandForcesConservativeFallback(): void
