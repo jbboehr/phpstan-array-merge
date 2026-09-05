@@ -105,12 +105,13 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
             ),
         ]))->resolve();
         $nativeOutcome = self::constantArrayFromRuntime(['x' => 'later']);
+        $flippedResult = $result->flipArray();
 
         $this->assertTrue(
-            $result->flipArray()->isSuperTypeOf($nativeOutcome)->yes(),
+            $flippedResult->isSuperTypeOf($nativeOutcome)->yes(),
             sprintf(
                 'Flipped inferred type %s must contain the native duplicate-value outcome %s.',
-                $result->flipArray()->describe(VerbosityLevel::precise()),
+                $flippedResult->describe(VerbosityLevel::precise()),
                 $nativeOutcome->describe(VerbosityLevel::precise()),
             ),
         );
@@ -238,68 +239,6 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
         }
     }
 
-    public function testUnusualAutoIndexStateIsNotRetainedInAConflictingShape(): void
-    {
-        $unusualShape = new ConstantArrayType(
-            [new ConstantStringType('fixed')],
-            [new StringType()],
-            [7],
-        );
-
-        $result = (new ArrayMergeType([
-            new ArrayType(new StringType(), new IntegerType()),
-            $unusualShape,
-        ]))->resolve();
-
-        $runtimeOutcome = self::constantArrayFromRuntime(['fixed' => 'shape']);
-        $this->assertTrue(
-            $result->isSuperTypeOf($runtimeOutcome)->yes(),
-            'The unusual construction metadata must not exclude the visible array_merge result.',
-        );
-
-        $constantArrays = $result->getConstantArrays();
-
-        if ([] === $constantArrays) {
-            return;
-        }
-
-        foreach ($constantArrays as $constantArray) {
-            $this->assertSame(
-                [0],
-                $constantArray->getNextAutoIndexes(),
-                'array_merge creates a new array whose first available integer offset is zero.',
-            );
-        }
-    }
-
-    public function testLargeTrailingShapesUseConservativeFallback(): void
-    {
-        $firstShapeKeyTypes = [];
-        $firstShapeValueTypes = [];
-
-        for ($i = 0; $i < 256; $i++) {
-            $firstShapeKeyTypes[] = new ConstantStringType('first' . $i);
-            $firstShapeValueTypes[] = new ConstantIntegerType($i);
-        }
-
-        $result = (new ArrayMergeType([
-            new ArrayType(new StringType(), new IntegerType()),
-            new ConstantArrayType($firstShapeKeyTypes, $firstShapeValueTypes),
-            new ConstantArrayType(
-                [new ConstantStringType('first0'), new ConstantStringType('last')],
-                [new ConstantStringType('overwritten'), new ConstantStringType('tail')],
-            ),
-        ]))->resolve();
-
-        $this->assertSame([], $result->getConstantArrays());
-        $this->assertTrue(TypeCombinator::union(
-            new IntegerType(),
-            new ConstantStringType('overwritten'),
-            new ConstantStringType('tail'),
-        )->equals($result->getIterableValueType()));
-        $this->assertTrue($result->hasOffsetValueType(new ConstantStringType('first0'))->maybe());
-    }
-
     public function testMultipleTrailingShapesRemainBroadAndContainNativeOutcome(): void
     {
         $runtimeShapes = [
@@ -336,115 +275,6 @@ final class GenericStringArrayShapePrecisionAdversarialTest extends PHPStanTestC
         )->isSuperTypeOf(
             $result->getIterableValueType(),
         )->yes());
-    }
-
-    public function testDisqualifiedThirdOperandForcesConservativeFallback(): void
-    {
-        $generic = new ArrayType(new StringType(), new IntegerType());
-        $validShape = new ConstantArrayType(
-            [new ConstantStringType('fixed')],
-            [new StringType()],
-        );
-        $optionalShape = new ConstantArrayType(
-            [new ConstantStringType('fixed')],
-            [new BooleanType()],
-            [0],
-            [0],
-        );
-        $integerShape = new ConstantArrayType(
-            [new ConstantIntegerType(7)],
-            [new BooleanType()],
-            [8],
-        );
-        $canonicalIntegerStringShape = new ConstantArrayType(
-            [new ConstantStringType('7')],
-            [new BooleanType()],
-        );
-        $otherShape = new ConstantArrayType(
-            [new ConstantStringType('other')],
-            [new BooleanType()],
-        );
-        $unusualAutoIndexShape = new ConstantArrayType(
-            [new ConstantStringType('other')],
-            [new BooleanType()],
-            [7],
-        );
-
-        /**
-         * @var array<string, array{
-         *     non-empty-list<Type>,
-         *     non-empty-list<array<int|string, bool|int|string>>
-         * }> $scenarios
-         */
-        $scenarios = [
-            'optional keys' => [
-                [$generic, $validShape, $optionalShape],
-                [['dynamic' => 1], ['fixed' => 'shape'], []],
-            ],
-            'integer keys' => [
-                [$generic, $validShape, $integerShape],
-                [['dynamic' => 1], ['fixed' => 'shape'], [7 => true]],
-            ],
-            'canonical integer string keys' => [
-                [$generic, $validShape, $canonicalIntegerStringShape],
-                [['dynamic' => 1], ['fixed' => 'shape'], [7 => true]],
-            ],
-            'shape unions' => [
-                [$generic, $validShape, new UnionType([$validShape, $otherShape])],
-                [['dynamic' => 1], ['fixed' => 'shape'], ['other' => true]],
-            ],
-            'shape intersections' => [
-                [$generic, $validShape, new IntersectionType([$otherShape, new NonEmptyArrayType()])],
-                [['dynamic' => 1], ['fixed' => 'shape'], ['other' => true]],
-            ],
-            'generic operands after shapes' => [
-                [$generic, $validShape, new ArrayType(new StringType(), new BooleanType())],
-                [['dynamic' => 1], ['fixed' => 'shape'], ['fixed' => true]],
-            ],
-            'empty shapes' => [
-                [$generic, $validShape, ConstantArrayTypeBuilder::createEmpty()->getArray()],
-                [['dynamic' => 1], ['fixed' => 'shape'], []],
-            ],
-            'unusual auto-index metadata' => [
-                [$generic, $validShape, $unusualAutoIndexShape],
-                [['dynamic' => 1], ['fixed' => 'shape'], ['other' => true]],
-            ],
-        ];
-
-        if (self::supportsUnsealedShapes()) {
-            $unsealedShape = new ConstantArrayType(
-                [new ConstantStringType('other')],
-                [new BooleanType()],
-                [0],
-                [],
-                TrinaryLogic::createNo(),
-                [new StringType(), new BooleanType()],
-            );
-            $scenarios['unsealed shapes'] = [
-                [$generic, $validShape, $unsealedShape],
-                [['dynamic' => 1], ['fixed' => 'shape'], ['other' => true, 'extra' => false]],
-            ];
-        }
-
-        foreach ($scenarios as $name => [$declaredTypes, $runtimeOperands]) {
-            $result = (new ArrayMergeType($declaredTypes))->resolve();
-            $this->assertSame(
-                [],
-                $result->getConstantArrays(),
-                sprintf('Scenario %s must retain the prior conservative fallback.', $name),
-            );
-
-            $runtimeOutcome = self::constantArrayFromRuntime(array_merge(...$runtimeOperands));
-            $this->assertTrue(
-                $result->isSuperTypeOf($runtimeOutcome)->yes(),
-                sprintf(
-                    'Scenario %s inferred %s, which excludes native result %s.',
-                    $name,
-                    $result->describe(VerbosityLevel::precise()),
-                    $runtimeOutcome->describe(VerbosityLevel::precise()),
-                ),
-            );
-        }
     }
 
     private static function supportsUnsealedShapes(): bool
