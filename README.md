@@ -7,6 +7,8 @@
 
 ## Installation
 
+Requires PHP `^8.1` and PHPStan `^2.0.4`.
+
 To use this extension, require it in [Composer](https://getcomposer.org/):
 
 ```bash
