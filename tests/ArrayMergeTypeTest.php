@@ -186,7 +186,8 @@ final class ArrayMergeTypeTest extends PHPStanTestCase
             new BenevolentUnionType([$possiblyEmpty, $nonEmpty, new NeverType()]),
         ]))->resolve();
 
-        $this->assertTrue($withoutNever->isIterableAtLeastOnce()->yes());
+        $this->assertTrue($withoutNever->isIterableAtLeastOnce()->maybe());
+        $this->assertTrue($withoutNever->isSuperTypeOf(ConstantArrayTypeBuilder::createEmpty()->getArray())->yes());
         $this->assertTrue($withoutNever->equals($withNever));
     }
 

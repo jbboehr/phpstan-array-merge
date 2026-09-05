@@ -63,6 +63,12 @@ final class ArrayMergeNonEmptyTest extends PHPStanTestCase
         yield 'nonempty intersection survives integer-key reindexing' => [
             'array-merge<array{2?: 1, 7?: 2}&non-empty-array>',
         ];
+        yield 'nonempty generic operand before a possibly empty operand' => [
+            'array-merge<non-empty-array<string, int>, array<string, int>>',
+        ];
+        yield 'nonempty generic operand after a possibly empty operand' => [
+            'array-merge<array<string, int>, non-empty-array<string, int>>',
+        ];
     }
 
     #[DataProvider('nonEmptyProvider')]
@@ -91,6 +97,9 @@ final class ArrayMergeNonEmptyTest extends PHPStanTestCase
         ];
         yield 'possible empty survivor beside an impossible branch' => [
             'array-merge<array{}|array{bad: never}|array{a: 1}>',
+        ];
+        yield 'serialized benevolent union with conflicting key orders' => [
+            'array-merge<__array_merge_benevolent<array{}|array{a: 1, b: 2}|array{b: 2, a: 1}>>',
         ];
     }
 
@@ -199,6 +208,57 @@ final class ArrayMergeNonEmptyTest extends PHPStanTestCase
 
         $this->assertTrue($result->isSuperTypeOf($empty)->yes(), $description);
         $this->assertTrue($result->isIterableAtLeastOnce()->maybe(), $description);
+    }
+
+    public function testBenevolentUnionRetainsEmptyThroughKeyOrderFallback(): void
+    {
+        $empty = self::constantArrayFromRuntime([]);
+        $firstOrder = self::constantArrayFromRuntime(['a' => 1, 'b' => 2]);
+        $secondOrder = self::constantArrayFromRuntime(['b' => 2, 'a' => 1]);
+        $operand = new BenevolentUnionType([$empty, $firstOrder, $secondOrder]);
+        $result = (new ArrayMergeType([$operand]))->resolve();
+        $description = $result->describe(VerbosityLevel::precise());
+
+        foreach ([$result, $result->getKeysArray(), $result->getValuesArray()] as $type) {
+            $this->assertTrue($type->isSuperTypeOf($empty)->yes(), $description);
+            $this->assertTrue($type->isIterableAtLeastOnce()->maybe(), $description);
+        }
+
+        $this->assertTrue($result->isSuperTypeOf($firstOrder)->yes(), $description);
+        $this->assertTrue($result->isSuperTypeOf($secondOrder)->yes(), $description);
+    }
+
+    public function testBenevolentUnionRetainsOptionalShapeThroughKeyOrderFallback(): void
+    {
+        $empty = self::constantArrayFromRuntime([]);
+        $operand = new BenevolentUnionType([
+            self::optionalStringShape(),
+            self::constantArrayFromRuntime(['a' => 1, 'b' => 2]),
+            self::constantArrayFromRuntime(['b' => 2, 'a' => 1]),
+        ]);
+        $result = (new ArrayMergeType([$operand]))->resolve();
+        $description = $result->describe(VerbosityLevel::precise());
+
+        foreach ([$result, $result->getKeysArray(), $result->getValuesArray()] as $type) {
+            $this->assertTrue($type->isSuperTypeOf($empty)->yes(), $description);
+            $this->assertTrue($type->isIterableAtLeastOnce()->maybe(), $description);
+        }
+    }
+
+    public function testBenevolentUnionOfNonEmptyGenericArraysRemainsNonEmpty(): void
+    {
+        $resolver = self::getContainer()->getByType(TypeStringResolver::class);
+        $operand = new BenevolentUnionType([
+            $resolver->resolve('non-empty-array<string, int>'),
+            $resolver->resolve('non-empty-array<int, int>'),
+        ]);
+        $result = (new ArrayMergeType([$operand]))->resolve();
+        $description = $result->describe(VerbosityLevel::precise());
+
+        $this->assertTrue($result->isIterableAtLeastOnce()->yes(), $description);
+        $this->assertTrue($result->isSuperTypeOf(self::constantArrayFromRuntime([]))->no(), $description);
+        $this->assertTrue($result->isSuperTypeOf(self::constantArrayFromRuntime(['a' => 1]))->yes(), $description);
+        $this->assertTrue($result->isSuperTypeOf(self::constantArrayFromRuntime([2]))->yes(), $description);
     }
 
     public function testSerializedBenevolentUnionRetainsReachableEmptyAlternative(): void

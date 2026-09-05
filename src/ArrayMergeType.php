@@ -306,6 +306,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         if ($nConstantArrays + $nOtherArrays === count($types)) {
+            $emptyArray = ConstantArrayTypeBuilder::createEmpty()->getArray();
             $allIntegerKeys = true;
             $atLeastOneNonEmpty = false;
             $combinedKeyType = null;
@@ -339,7 +340,7 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                     return new ArrayType(new MixedType(true), new MixedType(true));
                 }
 
-                if ($type->isIterableAtLeastOnce()->yes()) {
+                if ($type->isSuperTypeOf($emptyArray)->no()) {
                     $atLeastOneNonEmpty = true;
                 }
 
