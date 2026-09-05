@@ -64,6 +64,8 @@ class ArrayMergeType implements CompoundType, LateResolvableType
     /** @phpstan-ignore-next-line phpstanApi.trait */
     use NonGeneralizableTypeTrait;
 
+    private const KEY_ORDER_VARIANT_LIMIT = 64;
+
     /**
      * @param non-empty-list<Type> $types
      */
@@ -282,7 +284,15 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                     }
                 }
 
-                return $builder->getArray();
+                $result = $builder->getArray();
+                $constantResults = $result->getConstantArrays();
+
+                if (count($constantResults) !== 1 || self::hasConsistentKeyOrder($types, $constantResults[0])) {
+                    return $result;
+                }
+
+                // Use the generic fallback when order cannot be proven. Combining shapes
+                // with TypeCombinator::union() can erase their different key orders.
             }
         }
 
@@ -642,6 +652,99 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return $keyTypes;
+    }
+
+    /** @param non-empty-list<Type> $types */
+    private static function hasDisjointStringKeys(array $types): bool
+    {
+        $seenKeys = [];
+
+        foreach ($types as $type) {
+            $constantArrays = $type->getConstantArrays();
+            if (count($constantArrays) !== 1) {
+                return false;
+            }
+
+            foreach ($constantArrays[0]->getKeyTypes() as $keyType) {
+                $constantStrings = self::normalizeArrayMergeKeyType($keyType)->getConstantStrings();
+                if (count($constantStrings) !== 1 || isset($seenKeys[$constantStrings[0]->getValue()])) {
+                    return false;
+                }
+
+                $seenKeys[$constantStrings[0]->getValue()] = true;
+            }
+        }
+
+        return true;
+    }
+
+    /** @param non-empty-list<Type> $types */
+    private static function hasConsistentKeyOrder(array $types, ConstantArrayType $result): bool
+    {
+        $keyPositions = [];
+        $hasStringKey = false;
+
+        foreach ($result->getKeyTypes() as $position => $keyType) {
+            $keyPositions[$keyType->getValue()] = $position;
+            $hasStringKey = $hasStringKey || $keyType->isString()->yes();
+        }
+
+        // Integer-only merge results always have their keys in ascending order.
+        if (!$hasStringKey) {
+            return true;
+        }
+
+        // Optional absence cannot reorder disjoint string keys from single shapes.
+        if (self::hasDisjointStringKeys($types)) {
+            return true;
+        }
+
+        $mergedKeyArrays = [[]];
+
+        foreach ($types as $type) {
+            $nextKeyArrays = [];
+
+            foreach ($type->getConstantArrays() as $constantArray) {
+                // getAllArrays() samples rather than exhausts large optional shapes.
+                // Bound both expansion and the Cartesian product before accepting an order.
+                if (2 ** count($constantArray->getOptionalKeys()) > self::KEY_ORDER_VARIANT_LIMIT) {
+                    return false;
+                }
+
+                foreach ($constantArray->getAllArrays() as $variant) {
+                    $keys = [];
+                    foreach ($variant->getKeyTypes() as $keyType) {
+                        $keys[$keyType->getValue()] = true;
+                    }
+
+                    foreach ($mergedKeyArrays as $mergedKeys) {
+                        if (count($nextKeyArrays) >= self::KEY_ORDER_VARIANT_LIMIT) {
+                            return false;
+                        }
+
+                        $nextKeyArrays[] = array_merge($mergedKeys, $keys);
+                    }
+                }
+            }
+
+            $mergedKeyArrays = $nextKeyArrays;
+        }
+
+        // Every possible runtime key sequence must be a subsequence of the shape's
+        // order. Offset containment alone cannot establish this for optional keys.
+        foreach ($mergedKeyArrays as $keys) {
+            $previousPosition = -1;
+            foreach ($keys as $key => $_) {
+                $position = $keyPositions[$key] ?? -1;
+                if ($position <= $previousPosition) {
+                    return false;
+                }
+
+                $previousPosition = $position;
+            }
+        }
+
+        return true;
     }
 
     /**
