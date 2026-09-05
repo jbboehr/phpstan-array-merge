@@ -288,6 +288,15 @@ class ArrayMergeType implements CompoundType, LateResolvableType
                 $constantResults = $result->getConstantArrays();
 
                 if (count($constantResults) !== 1 || self::hasConsistentKeyOrder($types, $constantResults[0])) {
+                    $emptyArray = ConstantArrayTypeBuilder::createEmpty()->getArray();
+
+                    foreach ($types as $type) {
+                        // Benevolent unions can report nonempty while permitting an empty branch.
+                        if ($type->isSuperTypeOf($emptyArray)->no()) {
+                            return TypeCombinator::intersect($result, new NonEmptyArrayType());
+                        }
+                    }
+
                     return $result;
                 }
 

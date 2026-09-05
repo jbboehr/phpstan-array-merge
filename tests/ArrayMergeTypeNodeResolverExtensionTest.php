@@ -27,12 +27,14 @@ use PHPStan\PhpDoc\TypeNodeResolver;
 use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
 use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
 use PHPStan\Testing\TypeInferenceTestCase;
+use PHPStan\Type\Accessory\NonEmptyArrayType;
 use PHPStan\Type\ArrayType;
 use PHPStan\Type\Constant\ConstantArrayTypeBuilder;
 use PHPStan\Type\Constant\ConstantStringType;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\MixedType;
 use PHPStan\Type\Type;
+use PHPStan\Type\TypeCombinator;
 use PHPStan\Type\VerbosityLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
 use function is_callable;
@@ -129,6 +131,10 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
             $expectedType = 'array{' . substr($expectedType, 5);
         }
 
+        if (str_starts_with($expectedType, 'non-empty-array{') && self::usesIntersectionForNonEmptyShapes()) {
+            $expectedType = substr($expectedType, 10) . '&non-empty-array';
+        }
+
         if (str_contains($expectedType, "'08':") && self::usesUnquotedNonIdentifierStringKeys()) {
             $expectedType = str_replace("'08':", '08:', $expectedType);
         }
@@ -170,6 +176,16 @@ final class ArrayMergeTypeNodeResolverExtensionTest extends TypeInferenceTestCas
         $builder->setOffsetValueType(new ConstantStringType('08'), new IntegerType());
 
         return 'array{08: int}' === $builder->getArray()->describe(VerbosityLevel::precise());
+    }
+
+    private static function usesIntersectionForNonEmptyShapes(): bool
+    {
+        $builder = ConstantArrayTypeBuilder::createEmpty();
+        $builder->setOffsetValueType(new ConstantStringType('a'), new IntegerType(), true);
+        $builder->setOffsetValueType(new ConstantStringType('b'), new IntegerType(), true);
+        $arrayType = TypeCombinator::intersect($builder->getArray(), new NonEmptyArrayType());
+
+        return str_contains($arrayType->describe(VerbosityLevel::precise()), '&non-empty-array');
     }
 
     public function testChildResolverExceptionConversion(): void

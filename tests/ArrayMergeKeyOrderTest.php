@@ -201,7 +201,7 @@ final class ArrayMergeKeyOrderTest extends PHPStanTestCase
         $scenarios = [
             'array-merge<array{a?: 1}, array{b: 2}>' => 'array{a?: 1, b: 2}',
             'array-merge<array{a: 1, b: 2}, array{b: 3, a: 4}>' => 'array{a: 4, b: 3}',
-            'array-merge<array{a: 1}|array{b: 2}>' => 'array{a?: 1, b?: 2}',
+            'array-merge<array{a: 1}|array{b: 2}>' => 'array{a?: 1, b?: 2}&non-empty-array',
             'array-merge<array{0?: 1}, array{2}>' => 'array{0: 1|2, 1?: 2}',
         ];
 

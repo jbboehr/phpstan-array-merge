@@ -7,7 +7,9 @@ use function array_values;
 use function PHPStan\Testing\assertType;
 
 /** @phpstan-var array-merge<array{a: 1}|array{b: 2}> $shape */
-assertType('array{a?: 1, b?: 2}', $shape);
+assertType('non-empty-array{a?: 1, b?: 2}', $shape);
+assertType('false', $shape === []);
+assertType('1|2', array_values($shape)[0]);
 
 /** @phpstan-var array-merge<array{a: 1}|array{b: 2}, array{a: 3}> $overwrittenShape */
 // The b-only branch inserts b before a, while the a-only branch starts with a.

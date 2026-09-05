@@ -20,7 +20,7 @@ assertType("array{a: 2}", genericMergeOne(['a' => 1], ['a' => 2]));
 
 /** @phpstan-var array{a: int} $templateUnionInput */
 $templateUnionInput = ['a' => 1];
-assertType("array{a?: int, c?: bool}", genericMergeUnionOperand($templateUnionInput));
+assertType("non-empty-array{a?: int, c?: bool}", genericMergeUnionOperand($templateUnionInput));
 
 /**
  * @template T of array{}|array{a: int}

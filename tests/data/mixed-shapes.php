@@ -87,13 +87,13 @@ assertType('array{good: int}', $partiallyImpossibleShape);
 assertType('array{good: int, tail: string}', $partiallyImpossibleThenTail);
 
 /** @phpstan-var array-merge<array{bad: never}|array{first: int}|array{second: string}> $impossibleAmongMultipleSurvivors */
-assertType('array{first?: int, second?: string}', $impossibleAmongMultipleSurvivors);
+assertType('non-empty-array{first?: int, second?: string}', $impossibleAmongMultipleSurvivors);
 
 /** @phpstan-var array-merge<array{first: never}|array{second: never}, array{tail: string}> $allImpossibleShapesThenTail */
 assertType('*NEVER*', $allImpossibleShapesThenTail);
 
 /** @phpstan-var array-merge<array{optional?: never, kept: int}|array{other: string}> $optionalNeverAmongSurvivors */
-assertType('array{kept?: int, other?: string}', $optionalNeverAmongSurvivors);
+assertType('non-empty-array{kept?: int, other?: string}', $optionalNeverAmongSurvivors);
 
 /** @phpstan-var array-merge<array{optional?: never, kept: int}> $optionalNeverWithRequiredOffset */
 assertType('array{kept: int}', $optionalNeverWithRequiredOffset);
