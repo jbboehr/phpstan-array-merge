@@ -2,7 +2,7 @@
 # phpstan-array-merge
 
 [![ci](https://github.com/jbboehr/phpstan-array-merge/actions/workflows/ci.yml/badge.svg)](https://github.com/jbboehr/phpstan-array-merge/actions/workflows/ci.yml)
-[![License: AGPL v3+](https://img.shields.io/badge/License-AGPL_v3%2b-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: AGPL v3 with Romic Exception](https://img.shields.io/badge/License-AGPL_v3_with_Romic_Exception-blue.svg)](#license)
 ![stability-experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
 
 ## Installation
@@ -57,4 +57,17 @@ class ConstFixture
 
 ## License
 
-This project is licensed under the [AGPL v3+](https://www.gnu.org/licenses/agpl-3.0) License - see the LICENSE.md file for details.
+This project is licensed under the GNU Affero General Public License version 3
+with the Romic Exception (`AGPL-3.0-only WITH romic-exception`).
+
+The Romic Exception permits linking or combining this extension with other code
+without that other code becoming subject to the AGPL merely because of the
+linking or combination. Modifications to the extension remain subject to the
+AGPL, including its source-availability requirements for modified versions made
+available to users over a computer network.
+
+See [LICENSE.md](LICENSE.md) and [the Romic Exception](docs/LICENSE_EXCEPTION.md)
+for the complete terms.
+
+Alternative commercial licenses may be available from the
+[Project Steward](docs/STEWARD.md). Contact John Boehr at <jbboehr@gmail.com>.

@@ -2,7 +2,7 @@
     "name": "jbboehr/phpstan-array-merge",
     "type": "phpstan-extension",
     "description": "PHPStan extension providing an array-merge PHPDoc type for generic array_merge() return types.",
-    "license": "AGPL-3.0+",
+    "license": "AGPL-3.0-only WITH romic-exception",
     "homepage": "https://github.com/jbboehr/phpstan-array-merge",
     "authors": [
         {
