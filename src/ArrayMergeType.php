@@ -249,59 +249,10 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         if ($nConstantArrays === count($types)) {
-            $normalizedTypes = [];
-            $allNormalizedTypesConstant = true;
+            $result = self::tryMergeConstantArrays($types);
 
-            foreach ($types as $type) {
-                $normalizedType = self::normalizeConstantArrayIntegerKeys($type);
-                if (null === $normalizedType) {
-                    return new MixedType();
-                }
-
-                $normalizedTypes[] = $normalizedType;
-                if (!$normalizedType->isConstantArray()->yes()) {
-                    $allNormalizedTypesConstant = false;
-                }
-
-                foreach ($type->getConstantArrays() as $constantArrayType) {
-                    if (self::hasUnknownExtraOffsets($constantArrayType)) {
-                        $allNormalizedTypesConstant = false;
-                        break;
-                    }
-                }
-            }
-
-            if ($allNormalizedTypesConstant) {
-                $builder = ConstantArrayTypeBuilder::createEmpty();
-
-                foreach ($normalizedTypes as $normalizedType) {
-                    foreach (self::getConstantArrayKeyTypes($normalizedType) as $keyType) {
-                        $builder->setOffsetValueType(
-                            $keyType instanceof ConstantIntegerType ? null : $keyType,
-                            $normalizedType->getOffsetValueType($keyType),
-                            !$normalizedType->hasOffsetValueType($keyType)->yes(),
-                        );
-                    }
-                }
-
-                $result = $builder->getArray();
-                $constantResults = $result->getConstantArrays();
-
-                if (count($constantResults) !== 1 || self::hasConsistentKeyOrder($types, $constantResults[0])) {
-                    $emptyArray = ConstantArrayTypeBuilder::createEmpty()->getArray();
-
-                    foreach ($types as $type) {
-                        // Benevolent unions can report nonempty while permitting an empty branch.
-                        if ($type->isSuperTypeOf($emptyArray)->no()) {
-                            return TypeCombinator::intersect($result, new NonEmptyArrayType());
-                        }
-                    }
-
-                    return $result;
-                }
-
-                // Use the generic fallback when order cannot be proven. Combining shapes
-                // with TypeCombinator::union() can erase their different key orders.
+            if (null !== $result) {
+                return $result;
             }
         }
 
@@ -376,6 +327,71 @@ class ArrayMergeType implements CompoundType, LateResolvableType
         }
 
         return new ArrayType(new MixedType(true), new MixedType(true));
+    }
+
+    /**
+     * Returns null when the operands require the generic fallback.
+     *
+     * @param non-empty-list<Type> $types
+     */
+    private static function tryMergeConstantArrays(array $types): ?Type
+    {
+        $normalizedTypes = [];
+        $allNormalizedTypesConstant = true;
+
+        foreach ($types as $type) {
+            $normalizedType = self::normalizeConstantArrayIntegerKeys($type);
+            if (null === $normalizedType) {
+                return new MixedType();
+            }
+
+            $normalizedTypes[] = $normalizedType;
+            if (!$normalizedType->isConstantArray()->yes()) {
+                $allNormalizedTypesConstant = false;
+            }
+
+            foreach ($type->getConstantArrays() as $constantArrayType) {
+                if (self::hasUnknownExtraOffsets($constantArrayType)) {
+                    $allNormalizedTypesConstant = false;
+                    break;
+                }
+            }
+        }
+
+        if ($allNormalizedTypesConstant) {
+            $builder = ConstantArrayTypeBuilder::createEmpty();
+
+            foreach ($normalizedTypes as $normalizedType) {
+                foreach (self::getConstantArrayKeyTypes($normalizedType) as $keyType) {
+                    $builder->setOffsetValueType(
+                        $keyType instanceof ConstantIntegerType ? null : $keyType,
+                        $normalizedType->getOffsetValueType($keyType),
+                        !$normalizedType->hasOffsetValueType($keyType)->yes(),
+                    );
+                }
+            }
+
+            $result = $builder->getArray();
+            $constantResults = $result->getConstantArrays();
+
+            if (count($constantResults) !== 1 || self::hasConsistentKeyOrder($types, $constantResults[0])) {
+                $emptyArray = ConstantArrayTypeBuilder::createEmpty()->getArray();
+
+                foreach ($types as $type) {
+                    // Benevolent unions can report nonempty while permitting an empty branch.
+                    if ($type->isSuperTypeOf($emptyArray)->no()) {
+                        return TypeCombinator::intersect($result, new NonEmptyArrayType());
+                    }
+                }
+
+                return $result;
+            }
+
+            // Use the generic fallback when order cannot be proven. Combining shapes
+            // with TypeCombinator::union() can erase their different key orders.
+        }
+
+        return null;
     }
 
     private static function removeTopLevelNeverAlternatives(Type $type): Type
