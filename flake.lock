@@ -9,11 +9,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1786503253,
-        "narHash": "sha256-z2RfLBtLSNw5VzV+cA+/YXtgg2Hoxvd+P89aAO5Ts+c=",
+        "lastModified": 1788683347,
+        "narHash": "sha256-fcFq4zYo8VKZHoYVc53s85vWyZpZGMgQUmqlbtPcV4w=",
         "owner": "jbboehr",
         "repo": "agent-badge.ts",
-        "rev": "4e8f892f443245cf9a32583034d3a155e9fdcb48",
+        "rev": "c00276270b0546a9c3c22ac54d7e258ae2dbf4e6",
         "type": "github"
       },
       "original": {
