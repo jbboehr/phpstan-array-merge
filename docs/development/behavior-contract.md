@@ -58,12 +58,16 @@ does not mandate one internal type representation for those combinations.
 ```sh
 composer phpunit -- --no-coverage --filter 'ArrayMergeContractTest|ArrayMergeNativeBehaviorTest'
 composer phpunit -- --no-coverage
+composer phpstan -- clear-result-cache
 composer phpstan -- analyze --no-progress
 composer phpcs
 ```
 
 Use PHPUnit's `--filter` with a dataset name to replay one combination. CI also
 runs these tests in the existing PHPStan compatibility jobs.
+
+Clear PHPStan's result cache when checking changes to the extension. Cached
+results can hide new diagnostics in fixtures whose source has not changed.
 
 When a test fails, check fixture validity and the independent expected behavior
 before changing either production code or an assertion. Keep a minimal named

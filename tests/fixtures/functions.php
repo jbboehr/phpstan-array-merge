@@ -79,7 +79,7 @@ function nested(array $a, array $b, array $c): array
  */
 function genericMergeUnionOperand(array $value): array
 {
-    return [];
+    return $value;
 }
 
 /**
