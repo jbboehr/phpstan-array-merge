@@ -23,6 +23,11 @@
     nixpkgs-php81.url = "github:nixos/nixpkgs/nixos-25.05";
     systems.url = "github:nix-systems/default";
 
+    agent-badge = {
+      url = "github:jbboehr/agent-badge.ts/master";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     git-hooks = {
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -35,6 +40,7 @@
       nixpkgs,
       nixpkgs-php81,
       systems,
+      agent-badge,
       git-hooks,
     }:
     let
@@ -84,6 +90,7 @@
             in
             pkgs.mkShell {
               packages = pre-commit-check.enabledPackages ++ [
+                agent-badge.packages.${system}.default
                 pkgs.mdl
                 php'
                 php'.packages.composer

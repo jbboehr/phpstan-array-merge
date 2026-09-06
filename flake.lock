@@ -1,5 +1,28 @@
 {
   "nodes": {
+    "agent-badge": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "gitignore": "gitignore",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786503253,
+        "narHash": "sha256-z2RfLBtLSNw5VzV+cA+/YXtgg2Hoxvd+P89aAO5Ts+c=",
+        "owner": "jbboehr",
+        "repo": "agent-badge.ts",
+        "rev": "4e8f892f443245cf9a32583034d3a155e9fdcb48",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jbboehr",
+        "ref": "master",
+        "repo": "agent-badge.ts",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -13,6 +36,24 @@
       "original": {
         "owner": "NixOS",
         "repo": "flake-compat",
+        "type": "github"
+      }
+    },
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
         "type": "github"
       }
     },
@@ -34,6 +75,27 @@
       "original": {
         "owner": "cachix",
         "repo": "git-hooks.nix",
+        "type": "github"
+      }
+    },
+    "gitignore": {
+      "inputs": {
+        "nixpkgs": [
+          "agent-badge",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1762808025,
+        "narHash": "sha256-XmjITeZNMTQXGhhww6ed/Wacy2KzD6svioyCX7pkUu4=",
+        "owner": "hercules-ci",
+        "repo": "gitignore.nix",
+        "rev": "cb5e3fdca1de58ccbc3ef53de65bd372b48f567c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hercules-ci",
+        "repo": "gitignore.nix",
         "type": "github"
       }
     },
@@ -71,13 +133,29 @@
     },
     "root": {
       "inputs": {
+        "agent-badge": "agent-badge",
         "git-hooks": "git-hooks",
         "nixpkgs": "nixpkgs",
         "nixpkgs-php81": "nixpkgs-php81",
-        "systems": "systems"
+        "systems": "systems_2"
       }
     },
     "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "systems_2": {
       "locked": {
         "lastModified": 1681028828,
         "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",

@@ -4,6 +4,7 @@
 [![ci](https://github.com/jbboehr/phpstan-array-merge/actions/workflows/ci.yml/badge.svg)](https://github.com/jbboehr/phpstan-array-merge/actions/workflows/ci.yml)
 [![License: AGPL v3 with Romic Exception](https://img.shields.io/badge/License-AGPL_v3_with_Romic_Exception-blue.svg)](#license)
 ![stability-experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
+[![AI burn](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fjbboehr%2F8e84087d2b366ca46922d83c53177eb7%2Fraw%2Fagent-badge.json&cacheSeconds=300)](https://github.com/arlegotin/agent-badge)
 
 ## Installation
 
